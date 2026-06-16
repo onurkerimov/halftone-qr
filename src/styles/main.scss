@@ -1,0 +1,25 @@
+@import "bootstrap/scss/bootstrap";
+
+body {
+  header {
+    margin: {
+      top: 18px;
+      bottom: 40px;
+    }
+  }
+
+  form {
+    textarea {
+      height: 64px;
+      resize: none;
+
+      @include media-breakpoint-up(md) {
+        height: 210px;
+      }
+    }
+  }
+
+  #output {
+    border-color: $primary;
+  }
+}
