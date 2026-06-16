@@ -73,6 +73,35 @@ type RenderResult = {
   shapes: RenderShape[];
   width: number;
 };
+type PresetSettings = {
+  allowDiagonalJoins: boolean;
+  angleField: AngleField;
+  angleFieldSpeed: number;
+  backgroundImageHref: string;
+  backgroundPixelation: number;
+  backgroundSource: BackgroundSource;
+  connectorStyle: ConnectorStyle;
+  dotShrinkage: DotShrinkage;
+  errorLevel: ErrorLevel;
+  evolveAngleField: boolean;
+  fieldFirstColor: string;
+  fieldSecondColor: string;
+  fillColor: string;
+  joinAlgorithm: JoinAlgorithm;
+  maskPattern: QRMaskPattern;
+  maskPlaySpeed: number;
+  mouseModulation: boolean;
+  mouseSmoothing: number;
+  paddingModules: number;
+  pathStrokeSize: number;
+  pathSmoothing: number;
+  qrDarkColor: string;
+  qrLightColor: string;
+  strokeCap: StrokeCap;
+  syntheticPaddingData: boolean;
+  syntheticPaddingFieldCompliance: number;
+  userSize: number;
+};
 
 type QRCode = {
   addData(data: string): void;
@@ -116,6 +145,35 @@ const defaultFieldContext: FieldContext = {
   mouse: null,
   phase: 0,
 };
+const mainPresetSettings: PresetSettings = {
+  allowDiagonalJoins: true,
+  angleField: "rings",
+  angleFieldSpeed: 100,
+  backgroundImageHref: "",
+  backgroundPixelation: 0,
+  backgroundSource: "field",
+  connectorStyle: "dots",
+  dotShrinkage: 2,
+  errorLevel: "H",
+  evolveAngleField: true,
+  fieldFirstColor: "#ff3eb5",
+  fieldSecondColor: "#149cff",
+  fillColor: "#7fb8d8",
+  joinAlgorithm: "fieldSnake",
+  maskPattern: 0,
+  maskPlaySpeed: 100,
+  mouseModulation: true,
+  mouseSmoothing: 30,
+  paddingModules: 3,
+  pathStrokeSize: 2,
+  pathSmoothing: 0,
+  qrDarkColor: "#000000",
+  qrLightColor: "#ffffff",
+  strokeCap: "square",
+  syntheticPaddingData: true,
+  syntheticPaddingFieldCompliance: 100,
+  userSize: 6,
+};
 
 function isOneOf<T extends string | number>(values: T[], value: unknown): value is T {
   return values.includes(value as T);
@@ -158,6 +216,10 @@ function parsePercentage(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100 ? value : fallback;
 }
 
+function parsePathStrokeSize(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 2 && value <= 3 ? value : fallback;
+}
+
 function parseSpeedPercentage(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 300 ? value : fallback;
 }
@@ -168,6 +230,49 @@ function clamp(value: number, min: number, max: number): number {
 
 function parseOption<T extends string | number>(values: T[], value: unknown, fallback: T): T {
   return isOneOf(values, value) ? value : fallback;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parsePresetSettings(value: unknown, fallback: PresetSettings | null): PresetSettings | null {
+  if (!isRecord(value)) {
+    return fallback;
+  }
+
+  return {
+    allowDiagonalJoins: parseBoolean(value.allowDiagonalJoins, mainPresetSettings.allowDiagonalJoins),
+    angleField: parseOption(angleFields, value.angleField, mainPresetSettings.angleField),
+    angleFieldSpeed: parseSpeedPercentage(value.angleFieldSpeed, mainPresetSettings.angleFieldSpeed),
+    backgroundImageHref: parseImageDataUrl(value.backgroundImageHref, mainPresetSettings.backgroundImageHref),
+    backgroundPixelation: parseBackgroundPixelation(value.backgroundPixelation, mainPresetSettings.backgroundPixelation),
+    backgroundSource: parseOption(backgroundSources, value.backgroundSource, mainPresetSettings.backgroundSource),
+    connectorStyle: parseOption(connectorStyles, value.connectorStyle, mainPresetSettings.connectorStyle),
+    dotShrinkage: parseOption(dotShrinkages, value.dotShrinkage, mainPresetSettings.dotShrinkage),
+    errorLevel: parseOption(errorLevels, value.errorLevel, mainPresetSettings.errorLevel),
+    evolveAngleField: parseBoolean(value.evolveAngleField, mainPresetSettings.evolveAngleField),
+    fieldFirstColor: parseFillColor(value.fieldFirstColor, mainPresetSettings.fieldFirstColor),
+    fieldSecondColor: parseFillColor(value.fieldSecondColor, mainPresetSettings.fieldSecondColor),
+    fillColor: parseFillColor(value.fillColor, mainPresetSettings.fillColor),
+    joinAlgorithm: parseOption(joinAlgorithms, value.joinAlgorithm, mainPresetSettings.joinAlgorithm),
+    maskPattern: parseOption(qrMaskPatterns, value.maskPattern, mainPresetSettings.maskPattern),
+    maskPlaySpeed: parseSpeedPercentage(value.maskPlaySpeed, mainPresetSettings.maskPlaySpeed),
+    mouseModulation: parseBoolean(value.mouseModulation, mainPresetSettings.mouseModulation),
+    mouseSmoothing: parsePercentage(value.mouseSmoothing, mainPresetSettings.mouseSmoothing),
+    paddingModules: parsePadding(value.paddingModules, mainPresetSettings.paddingModules),
+    pathStrokeSize: parsePathStrokeSize(value.pathStrokeSize, mainPresetSettings.pathStrokeSize),
+    pathSmoothing: parsePercentage(value.pathSmoothing, mainPresetSettings.pathSmoothing),
+    qrDarkColor: parseFillColor(value.qrDarkColor, mainPresetSettings.qrDarkColor),
+    qrLightColor: parseFillColor(value.qrLightColor, mainPresetSettings.qrLightColor),
+    strokeCap: parseOption(strokeCaps, value.strokeCap, mainPresetSettings.strokeCap),
+    syntheticPaddingData: parseBoolean(value.syntheticPaddingData, mainPresetSettings.syntheticPaddingData),
+    syntheticPaddingFieldCompliance: parsePercentage(
+      value.syntheticPaddingFieldCompliance,
+      mainPresetSettings.syntheticPaddingFieldCompliance,
+    ),
+    userSize: parseQrSize(value.userSize, mainPresetSettings.userSize),
+  };
 }
 
 function readStoredState<T>(key: string, fallback: T, parse: (value: unknown, fallback: T) => T): T {
@@ -1011,6 +1116,7 @@ function createRenderResult(
   angleField: AngleField,
   fieldContext: FieldContext,
   connectorStyle: ConnectorStyle,
+  pathStrokeSize: number,
   pathSmoothing: number,
   strokeCap: StrokeCap,
   paddingModules: number,
@@ -1035,6 +1141,7 @@ function createRenderResult(
   const padding = syntheticPaddingData ? 0 : paddingModules * blockSize;
   const width = renderQrBytes.length * blockSize + padding * 2;
   const dotSize = blockSize / dotShrinkage;
+  const pathStrokeWidth = blockSize / pathStrokeSize;
   const dotOffset = (blockSize - dotSize) / 2;
   const backgroundPixelationGrid =
     backgroundPixelation > 0
@@ -1105,7 +1212,7 @@ function createRenderResult(
         kind: "path",
         stroke: color,
         strokeLinecap: strokeCap,
-        strokeWidth: dotSize,
+        strokeWidth: pathStrokeWidth,
       });
     }
   } else {
@@ -1252,16 +1359,17 @@ export default function App() {
     "dots",
     (value, fallback) => parseOption(connectorStyles, value, fallback),
   );
+  const [pathStrokeSize, setPathStrokeSize] = useStoredState("pathStrokeSize", 2, parsePathStrokeSize);
   const [pathSmoothing, setPathSmoothing] = useStoredState("pathSmoothing", 0, parsePercentage);
   const [paddingModules, setPaddingModules] = useStoredState("paddingModules", 3, parsePadding);
   const [syntheticPaddingData, setSyntheticPaddingData] = useStoredState(
     "syntheticPaddingData",
-    false,
+    true,
     parseBoolean,
   );
   const [syntheticPaddingFieldCompliance, setSyntheticPaddingFieldCompliance] = useStoredState(
     "syntheticPaddingFieldCompliance",
-    65,
+    100,
     parsePercentage,
   );
   const [backgroundPixelation, setBackgroundPixelation] = useStoredState(
@@ -1297,6 +1405,11 @@ export default function App() {
   );
   const [mouseSmoothing, setMouseSmoothing] = useStoredState("mouseSmoothing", 30, parsePercentage);
   const [advancedOpen, setAdvancedOpen] = useStoredState("advancedOpen", false, parseBoolean);
+  const [savedPreset, setSavedPreset] = useStoredState<PresetSettings | null>(
+    "savedPreset",
+    null,
+    parsePresetSettings,
+  );
   const [isPlayingMasks, setIsPlayingMasks] = useState(false);
   const [generatedBackgroundHref, setGeneratedBackgroundHref] = useState("");
   const [fieldPhase, setFieldPhase] = useState(0);
@@ -1349,6 +1462,7 @@ export default function App() {
         angleField,
         fieldContext,
         connectorStyle,
+        pathStrokeSize,
         pathSmoothing,
         strokeCap,
         paddingModules,
@@ -1378,6 +1492,7 @@ export default function App() {
       maskPattern,
       mouseModulation,
       paddingModules,
+      pathStrokeSize,
       pathSmoothing,
       strokeCap,
       syntheticPaddingData,
@@ -1608,32 +1723,68 @@ export default function App() {
     targetFieldMouseRef.current = null;
   }, []);
 
+  const getCurrentPresetSettings = (): PresetSettings => ({
+    allowDiagonalJoins,
+    angleField,
+    angleFieldSpeed,
+    backgroundImageHref,
+    backgroundPixelation,
+    backgroundSource,
+    connectorStyle,
+    dotShrinkage,
+    errorLevel,
+    evolveAngleField,
+    fieldFirstColor,
+    fieldSecondColor,
+    fillColor,
+    joinAlgorithm,
+    maskPattern,
+    maskPlaySpeed,
+    mouseModulation,
+    mouseSmoothing,
+    paddingModules,
+    pathStrokeSize,
+    pathSmoothing,
+    qrDarkColor,
+    qrLightColor,
+    strokeCap,
+    syntheticPaddingData,
+    syntheticPaddingFieldCompliance,
+    userSize,
+  });
+
+  const applyPresetSettings = (preset: PresetSettings) => {
+    setErrorLevel(preset.errorLevel);
+    setUserSize(preset.userSize);
+    setFillColor(preset.fillColor);
+    setQrDarkColor(preset.qrDarkColor);
+    setQrLightColor(preset.qrLightColor);
+    setFieldFirstColor(preset.fieldFirstColor);
+    setFieldSecondColor(preset.fieldSecondColor);
+    setBackgroundSource(preset.backgroundSource);
+    setBackgroundImageHref(preset.backgroundImageHref);
+    setDotShrinkage(preset.dotShrinkage);
+    setJoinAlgorithm(preset.joinAlgorithm);
+    setAllowDiagonalJoins(preset.allowDiagonalJoins);
+    setAngleField(preset.angleField);
+    setConnectorStyle(preset.connectorStyle);
+    setPathStrokeSize(preset.pathStrokeSize);
+    setPathSmoothing(preset.pathSmoothing);
+    setPaddingModules(preset.paddingModules);
+    setSyntheticPaddingData(preset.syntheticPaddingData);
+    setSyntheticPaddingFieldCompliance(preset.syntheticPaddingFieldCompliance);
+    setBackgroundPixelation(preset.backgroundPixelation);
+    setMaskPattern(preset.maskPattern);
+    setMaskPlaySpeed(preset.maskPlaySpeed);
+    setStrokeCap(preset.strokeCap);
+    setEvolveAngleField(preset.evolveAngleField);
+    setAngleFieldSpeed(preset.angleFieldSpeed);
+    setMouseModulation(preset.mouseModulation);
+    setMouseSmoothing(preset.mouseSmoothing);
+  };
+
   const applyMainPreset = () => {
-    setErrorLevel("H");
-    setUserSize(6);
-    setFillColor("#7fb8d8");
-    setQrDarkColor("#000000");
-    setQrLightColor("#ffffff");
-    setFieldFirstColor("#ff3eb5");
-    setFieldSecondColor("#149cff");
-    setBackgroundSource("field");
-    setDotShrinkage(2);
-    setJoinAlgorithm("fieldSnake");
-    setAllowDiagonalJoins(true);
-    setAngleField("rings");
-    setConnectorStyle("dots");
-    setPathSmoothing(0);
-    setPaddingModules(3);
-    setSyntheticPaddingData(false);
-    setSyntheticPaddingFieldCompliance(65);
-    setBackgroundPixelation(0);
-    setMaskPattern(0);
-    setMaskPlaySpeed(100);
-    setStrokeCap("square");
-    setEvolveAngleField(true);
-    setAngleFieldSpeed(100);
-    setMouseModulation(true);
-    setMouseSmoothing(30);
+    applyPresetSettings(mainPresetSettings);
   };
 
   const applySmoothPathsPreset = () => {
@@ -1644,13 +1795,28 @@ export default function App() {
 
   const resetSettings = () => {
     applyMainPreset();
-    setBackgroundImageHref("");
     setFieldMouse(null);
     fieldMouseRef.current = null;
     targetFieldMouseRef.current = null;
     setFieldPhase(0);
     setGeneratedBackgroundHref("");
     setIsPlayingMasks(false);
+  };
+
+  const saveCurrentPreset = () => {
+    setSavedPreset({
+      ...getCurrentPresetSettings(),
+      mouseSmoothing: 0,
+    });
+  };
+
+  const applySavedPreset = () => {
+    if (savedPreset) {
+      applyPresetSettings({
+        ...savedPreset,
+        mouseSmoothing: 0,
+      });
+    }
   };
 
   return (
@@ -1707,6 +1873,17 @@ export default function App() {
                     </button>
                     <button className="ui-button secondary" onClick={resetSettings} type="button">
                       Reset settings
+                    </button>
+                    <button className="ui-button secondary" onClick={saveCurrentPreset} type="button">
+                      Save current
+                    </button>
+                    <button
+                      className="ui-button secondary"
+                      disabled={!savedPreset}
+                      onClick={applySavedPreset}
+                      type="button"
+                    >
+                      Apply saved
                     </button>
                   </div>
                 </div>
@@ -2065,6 +2242,24 @@ export default function App() {
                 </button>
               </div>
               <span className="field-hint">Applies when connector rendering is set to SVG paths.</span>
+            </div>
+
+            <div className="field">
+              <label className="field-label range-label" htmlFor="pathStrokeSize">
+                <span>Path stroke size</span>
+                <span>{pathStrokeSize.toFixed(2)}x</span>
+              </label>
+              <input
+                className="ui-range"
+                id="pathStrokeSize"
+                max="3"
+                min="2"
+                onChange={(event) => setPathStrokeSize(Number.parseFloat(event.target.value))}
+                step="0.01"
+                type="range"
+                value={pathStrokeSize}
+              />
+              <span className="field-hint">2x is thicker. 3x is thinner.</span>
             </div>
 
             <div className="field">
