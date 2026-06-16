@@ -44,6 +44,13 @@ type FieldContext = {
   mouse: Point | null;
   phase: number;
 };
+type RenderCircle = {
+  cx: number;
+  cy: number;
+  fill: string;
+  kind: "circle";
+  r: number;
+};
 type RenderRect = {
   kind: "rect";
   fill: string;
@@ -68,7 +75,7 @@ type RenderImage = {
   x: number;
   y: number;
 };
-type RenderShape = RenderImage | RenderRect | RenderPath;
+type RenderShape = RenderCircle | RenderImage | RenderRect | RenderPath;
 type RenderResult = {
   shapes: RenderShape[];
   width: number;
@@ -88,6 +95,7 @@ type PresetSettings = {
   fieldSecondColor: string;
   fillColor: string;
   joinAlgorithm: JoinAlgorithm;
+  isPlayingMasks: boolean;
   maskPattern: QRMaskPattern;
   maskPlaySpeed: number;
   mouseModulation: boolean;
@@ -97,6 +105,7 @@ type PresetSettings = {
   pathSmoothing: number;
   qrDarkColor: string;
   qrLightColor: string;
+  standaloneDotScale: number;
   strokeCap: StrokeCap;
   syntheticPaddingData: boolean;
   syntheticPaddingFieldCompliance: number;
@@ -160,6 +169,7 @@ const mainPresetSettings: PresetSettings = {
   fieldSecondColor: "#149cff",
   fillColor: "#7fb8d8",
   joinAlgorithm: "fieldSnake",
+  isPlayingMasks: false,
   maskPattern: 0,
   maskPlaySpeed: 100,
   mouseModulation: true,
@@ -169,6 +179,7 @@ const mainPresetSettings: PresetSettings = {
   pathSmoothing: 0,
   qrDarkColor: "#000000",
   qrLightColor: "#ffffff",
+  standaloneDotScale: 2,
   strokeCap: "square",
   syntheticPaddingData: true,
   syntheticPaddingFieldCompliance: 100,
@@ -220,6 +231,10 @@ function parsePathStrokeSize(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 2 && value <= 3 ? value : fallback;
 }
 
+function parseStandaloneDotScale(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 1 && value <= 4 ? value : fallback;
+}
+
 function parseSpeedPercentage(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 300 ? value : fallback;
 }
@@ -256,6 +271,7 @@ function parsePresetSettings(value: unknown, fallback: PresetSettings | null): P
     fieldSecondColor: parseFillColor(value.fieldSecondColor, mainPresetSettings.fieldSecondColor),
     fillColor: parseFillColor(value.fillColor, mainPresetSettings.fillColor),
     joinAlgorithm: parseOption(joinAlgorithms, value.joinAlgorithm, mainPresetSettings.joinAlgorithm),
+    isPlayingMasks: parseBoolean(value.isPlayingMasks, mainPresetSettings.isPlayingMasks),
     maskPattern: parseOption(qrMaskPatterns, value.maskPattern, mainPresetSettings.maskPattern),
     maskPlaySpeed: parseSpeedPercentage(value.maskPlaySpeed, mainPresetSettings.maskPlaySpeed),
     mouseModulation: parseBoolean(value.mouseModulation, mainPresetSettings.mouseModulation),
@@ -265,6 +281,7 @@ function parsePresetSettings(value: unknown, fallback: PresetSettings | null): P
     pathSmoothing: parsePercentage(value.pathSmoothing, mainPresetSettings.pathSmoothing),
     qrDarkColor: parseFillColor(value.qrDarkColor, mainPresetSettings.qrDarkColor),
     qrLightColor: parseFillColor(value.qrLightColor, mainPresetSettings.qrLightColor),
+    standaloneDotScale: parseStandaloneDotScale(value.standaloneDotScale, mainPresetSettings.standaloneDotScale),
     strokeCap: parseOption(strokeCaps, value.strokeCap, mainPresetSettings.strokeCap),
     syntheticPaddingData: parseBoolean(value.syntheticPaddingData, mainPresetSettings.syntheticPaddingData),
     syntheticPaddingFieldCompliance: parsePercentage(
@@ -899,6 +916,39 @@ function getDotCenter(dot: DotCell, padding: number): Point {
   };
 }
 
+function createPointerAvoidanceKeys(
+  fieldContext: FieldContext,
+  controlBytes: QRMatrix,
+  renderWidth: number,
+  padding: number,
+): Set<string> {
+  if (!fieldContext.mouse) {
+    return new Set();
+  }
+
+  const keys = new Set<string>();
+  const pointerX = fieldContext.mouse.x * renderWidth;
+  const pointerY = fieldContext.mouse.y * renderWidth;
+  const radius = blockSize * 1.25;
+
+  for (let byteRow = 0; byteRow < controlBytes.length; byteRow += 1) {
+    for (let byteCell = 0; byteCell < controlBytes[byteRow].length; byteCell += 1) {
+      if (!isDataCell(controlBytes, byteRow, byteCell)) {
+        continue;
+      }
+
+      const centerX = padding + byteRow * blockSize + blockSize / 2;
+      const centerY = padding + byteCell * blockSize + blockSize / 2;
+
+      if (Math.hypot(centerX - pointerX, centerY - pointerY) <= radius) {
+        keys.add(dotKey({ byteCell, byteRow }));
+      }
+    }
+  }
+
+  return keys;
+}
+
 function createEdgeChains(edges: DotEdge[]): DotCell[][] {
   const adjacency = new Map<string, Array<{ edgeIndex: number; other: DotCell }>>();
   const dotByKey = new Map<string, DotCell>();
@@ -1118,6 +1168,7 @@ function createRenderResult(
   connectorStyle: ConnectorStyle,
   pathStrokeSize: number,
   pathSmoothing: number,
+  standaloneDotScale: number,
   strokeCap: StrokeCap,
   paddingModules: number,
   syntheticPaddingData: boolean,
@@ -1147,6 +1198,7 @@ function createRenderResult(
     backgroundPixelation > 0
       ? Math.round((qrBytes.length * qrBytes.length) / backgroundPixelation)
       : 0;
+  const pointerAvoidanceKeys = createPointerAvoidanceKeys(fieldContext, renderControlBytes, width, padding);
   const joinEdges = createJoinEdges(
     joinAlgorithm,
     renderQrBytes,
@@ -1154,7 +1206,7 @@ function createRenderResult(
     allowDiagonalJoins,
     angleField,
     fieldContext,
-  );
+  ).filter((edge) => !pointerAvoidanceKeys.has(dotKey(edge.from)) && !pointerAvoidanceKeys.has(dotKey(edge.to)));
   const pathDotKeys =
     connectorStyle === "paths"
       ? new Set(joinEdges.flatMap((edge) => [dotKey(edge.from), dotKey(edge.to)]))
@@ -1188,7 +1240,22 @@ function createRenderResult(
 
   for (let byteRow = 0; byteRow < renderQrBytes.length; byteRow += 1) {
     for (let byteCell = 0; byteCell < renderQrBytes[byteRow].length; byteCell += 1) {
+      if (pointerAvoidanceKeys.has(dotKey({ byteCell, byteRow }))) {
+        continue;
+      }
+
       if (pathDotKeys.has(dotKey({ byteCell, byteRow })) && isDataCell(renderControlBytes, byteRow, byteCell)) {
+        continue;
+      }
+
+      if (connectorStyle === "paths" && strokeCap === "round" && isDataCell(renderControlBytes, byteRow, byteCell)) {
+        shapes.push({
+          cx: padding + byteRow * blockSize + blockSize / 2,
+          cy: padding + byteCell * blockSize + blockSize / 2,
+          fill: renderQrBytes[byteRow][byteCell] ? qrDarkColor : qrLightColor,
+          kind: "circle",
+          r: (dotSize * standaloneDotScale) / 2,
+        });
         continue;
       }
 
@@ -1235,11 +1302,25 @@ function createRenderResult(
     }
   }
 
+  if (fieldContext.mouse) {
+    const pointerModuleX = clamp(Math.floor((fieldContext.mouse.x * width - padding) / blockSize), 0, renderQrBytes.length - 1);
+    const pointerModuleY = clamp(Math.floor((fieldContext.mouse.y * width - padding) / blockSize), 0, renderQrBytes.length - 1);
+    const pointerDotColor = renderQrBytes[pointerModuleX][pointerModuleY] ? qrDarkColor : qrLightColor;
+
+    shapes.push({
+      cx: fieldContext.mouse.x * width,
+      cy: fieldContext.mouse.y * width,
+      fill: pointerDotColor,
+      kind: "circle",
+      r: (dotSize * standaloneDotScale * 1.5) / 2,
+    });
+  }
+
   for (let byteRow = 0; byteRow < renderControlBytes.length; byteRow += 1) {
     for (let byteCell = 0; byteCell < renderControlBytes[byteRow].length; byteCell += 1) {
       const controlByte = renderControlBytes[byteRow][byteCell];
 
-      if (controlByte !== null) {
+      if (controlByte !== null && !pointerAvoidanceKeys.has(dotKey({ byteCell, byteRow }))) {
         shapes.push({
           fill: controlByte ? qrDarkColor : qrLightColor,
           height: blockSize,
@@ -1267,7 +1348,12 @@ function drawRenderResult(
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   for (const shape of renderResult.shapes) {
-    if (shape.kind === "rect") {
+    if (shape.kind === "circle") {
+      ctx.fillStyle = shape.fill;
+      ctx.beginPath();
+      ctx.arc(shape.cx, shape.cy, shape.r, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (shape.kind === "rect") {
       ctx.fillStyle = shape.fill;
       ctx.fillRect(shape.x, shape.y, shape.width, shape.height);
     } else if (shape.kind === "image") {
@@ -1291,6 +1377,10 @@ function escapeAttribute(value: string): string {
 function createSvgHref(renderResult: RenderResult): string {
   const shapes = renderResult.shapes
     .map((shape) => {
+      if (shape.kind === "circle") {
+        return `<circle cx="${shape.cx}" cy="${shape.cy}" r="${shape.r}" fill="${shape.fill}" />`;
+      }
+
       if (shape.kind === "rect") {
         return `<rect x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}" fill="${shape.fill}" />`;
       }
@@ -1361,6 +1451,11 @@ export default function App() {
   );
   const [pathStrokeSize, setPathStrokeSize] = useStoredState("pathStrokeSize", 2, parsePathStrokeSize);
   const [pathSmoothing, setPathSmoothing] = useStoredState("pathSmoothing", 0, parsePercentage);
+  const [standaloneDotScale, setStandaloneDotScale] = useStoredState(
+    "standaloneDotScale",
+    2,
+    parseStandaloneDotScale,
+  );
   const [paddingModules, setPaddingModules] = useStoredState("paddingModules", 3, parsePadding);
   const [syntheticPaddingData, setSyntheticPaddingData] = useStoredState(
     "syntheticPaddingData",
@@ -1410,7 +1505,7 @@ export default function App() {
     null,
     parsePresetSettings,
   );
-  const [isPlayingMasks, setIsPlayingMasks] = useState(false);
+  const [isPlayingMasks, setIsPlayingMasks] = useStoredState("isPlayingMasks", false, parseBoolean);
   const [generatedBackgroundHref, setGeneratedBackgroundHref] = useState("");
   const [fieldPhase, setFieldPhase] = useState(0);
   const [fieldMouse, setFieldMouse] = useState<Point | null>(null);
@@ -1433,74 +1528,20 @@ export default function App() {
 
   const outputRef = useRef<HTMLCanvasElement | null>(null);
   const backgroundImageRef = useRef<HTMLImageElement | null>(null);
+  const loadedBackgroundHrefRef = useRef("");
+  const requestedBackgroundHrefRef = useRef("");
   const fieldMouseRef = useRef<Point | null>(null);
   const qrMatrixCacheRef = useRef(new Map<string, ReturnType<typeof createQrMatrices>>());
   const targetFieldMouseRef = useRef<Point | null>(null);
   const [backgroundImageVersion, setBackgroundImageVersion] = useState(0);
 
-  const halftoneQR = useCallback(
-    (qrBytes: QRMatrix, controlBytes: QRMatrix) => {
-      const canvas = outputRef.current;
+  useEffect(() => {
+    const canvas = outputRef.current;
 
-      if (!canvas) {
-        return;
-      }
+    if (!canvas) {
+      return;
+    }
 
-      const renderResult = createRenderResult(
-        qrBytes,
-        controlBytes,
-        dotShrinkage,
-        fillColor,
-        qrDarkColor,
-        qrLightColor,
-        effectiveBackgroundImageHref,
-        backgroundImageRef.current,
-        backgroundSource,
-        effectiveBackgroundPixelation,
-        joinAlgorithm,
-        allowDiagonalJoins,
-        angleField,
-        fieldContext,
-        connectorStyle,
-        pathStrokeSize,
-        pathSmoothing,
-        strokeCap,
-        paddingModules,
-        syntheticPaddingData,
-        syntheticPaddingFieldCompliance,
-        maskPattern,
-      );
-      setQrResolution(qrBytes.length);
-      drawRenderResult(canvas, renderResult, backgroundImageRef.current);
-      setPngHref(canvas.toDataURL("image/png"));
-      setSvgHref(createSvgHref(renderResult));
-    },
-    [
-      allowDiagonalJoins,
-      angleField,
-      backgroundSource,
-      effectiveBackgroundPixelation,
-      connectorStyle,
-      dotShrinkage,
-      effectiveBackgroundImageHref,
-      fieldMouse,
-      fieldPhase,
-      fillColor,
-      qrDarkColor,
-      qrLightColor,
-      joinAlgorithm,
-      maskPattern,
-      mouseModulation,
-      paddingModules,
-      pathStrokeSize,
-      pathSmoothing,
-      strokeCap,
-      syntheticPaddingData,
-      syntheticPaddingFieldCompliance,
-    ],
-  );
-
-  const regen = useCallback(() => {
     const firstSize = userSize === 0 ? 1 : userSize;
     let lastError: unknown = null;
 
@@ -1523,7 +1564,40 @@ export default function App() {
         }
 
         const { qrBytes, controlBytes } = matrices;
-        halftoneQR(qrBytes, controlBytes);
+        const renderResult = createRenderResult(
+          qrBytes,
+          controlBytes,
+          dotShrinkage,
+          fillColor,
+          qrDarkColor,
+          qrLightColor,
+          effectiveBackgroundImageHref,
+          backgroundImageRef.current,
+          backgroundSource,
+          effectiveBackgroundPixelation,
+          joinAlgorithm,
+          allowDiagonalJoins,
+          angleField,
+          fieldContext,
+          connectorStyle,
+          pathStrokeSize,
+          pathSmoothing,
+          standaloneDotScale,
+          strokeCap,
+          paddingModules,
+          syntheticPaddingData,
+          syntheticPaddingFieldCompliance,
+          maskPattern,
+        );
+
+        setQrResolution((current) => (current === qrBytes.length ? current : qrBytes.length));
+        drawRenderResult(canvas, renderResult, backgroundImageRef.current);
+
+        const nextPngHref = canvas.toDataURL("image/png");
+        const nextSvgHref = createSvgHref(renderResult);
+
+        setPngHref((current) => (current === nextPngHref ? current : nextPngHref));
+        setSvgHref((current) => (current === nextSvgHref ? current : nextSvgHref));
 
         if (userSize !== 0 && userSize !== qrSize) {
           setUserSize(qrSize);
@@ -1537,7 +1611,34 @@ export default function App() {
     }
 
     console.warn("Could not fit data in QR versions 1-10.", lastError);
-  }, [backgroundImageVersion, debouncedText, errorLevel, halftoneQR, maskPattern, setUserSize, userSize]);
+  }, [
+    allowDiagonalJoins,
+    angleField,
+    backgroundImageVersion,
+    backgroundSource,
+    connectorStyle,
+    debouncedText,
+    dotShrinkage,
+    effectiveBackgroundImageHref,
+    effectiveBackgroundPixelation,
+    errorLevel,
+    fieldMouse,
+    fieldPhase,
+    fillColor,
+    joinAlgorithm,
+    maskPattern,
+    mouseModulation,
+    paddingModules,
+    pathStrokeSize,
+    pathSmoothing,
+    standaloneDotScale,
+    qrDarkColor,
+    qrLightColor,
+    strokeCap,
+    syntheticPaddingData,
+    syntheticPaddingFieldCompliance,
+    userSize,
+  ]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -1548,34 +1649,45 @@ export default function App() {
   }, [text]);
 
   useEffect(() => {
-    regen();
-  }, [regen]);
-
-  useEffect(() => {
     fieldMouseRef.current = fieldMouse;
   }, [fieldMouse]);
 
   useEffect(() => {
     let cancelled = false;
+    requestedBackgroundHrefRef.current = effectiveBackgroundImageHref;
 
     if (!effectiveBackgroundImageHref) {
-      backgroundImageRef.current = null;
-      setBackgroundImageVersion((version) => version + 1);
+      if (backgroundImageRef.current || loadedBackgroundHrefRef.current) {
+        backgroundImageRef.current = null;
+        loadedBackgroundHrefRef.current = "";
+        requestedBackgroundHrefRef.current = "";
+        setBackgroundImageVersion((version) => version + 1);
+      }
       return;
     }
 
+    const requestedHref = effectiveBackgroundImageHref;
+
     loadImage(effectiveBackgroundImageHref)
       .then((image) => {
-        if (!cancelled) {
+        if (
+          !cancelled &&
+          requestedBackgroundHrefRef.current === requestedHref &&
+          loadedBackgroundHrefRef.current !== requestedHref
+        ) {
           backgroundImageRef.current = image;
+          loadedBackgroundHrefRef.current = requestedHref;
           setBackgroundImageVersion((version) => version + 1);
         }
       })
       .catch((error: unknown) => {
-        if (!cancelled) {
-          backgroundImageRef.current = null;
+        if (!cancelled && requestedBackgroundHrefRef.current === requestedHref) {
+          if (backgroundImageRef.current || loadedBackgroundHrefRef.current) {
+            backgroundImageRef.current = null;
+            loadedBackgroundHrefRef.current = "";
+            setBackgroundImageVersion((version) => version + 1);
+          }
           console.error(error);
-          setBackgroundImageVersion((version) => version + 1);
         }
       });
 
@@ -1589,14 +1701,16 @@ export default function App() {
       return;
     }
 
-    setGeneratedBackgroundHref(
-      createGeneratedFieldBackground(
-        angleField,
-        fieldContext,
-        fieldFirstColor,
-        fieldSecondColor,
-        effectiveBackgroundPixelation,
-      ),
+    const nextGeneratedBackgroundHref = createGeneratedFieldBackground(
+      angleField,
+      fieldContext,
+      fieldFirstColor,
+      fieldSecondColor,
+      effectiveBackgroundPixelation,
+    );
+
+    setGeneratedBackgroundHref((current) =>
+      current === nextGeneratedBackgroundHref ? current : nextGeneratedBackgroundHref,
     );
   }, [
     angleField,
@@ -1648,6 +1762,11 @@ export default function App() {
       if (!current) {
         fieldMouseRef.current = target;
         setFieldMouse(target);
+        animationFrame = window.requestAnimationFrame(tick);
+        return;
+      }
+
+      if (current === target) {
         animationFrame = window.requestAnimationFrame(tick);
         return;
       }
@@ -1738,6 +1857,7 @@ export default function App() {
     fieldSecondColor,
     fillColor,
     joinAlgorithm,
+    isPlayingMasks,
     maskPattern,
     maskPlaySpeed,
     mouseModulation,
@@ -1747,6 +1867,7 @@ export default function App() {
     pathSmoothing,
     qrDarkColor,
     qrLightColor,
+    standaloneDotScale,
     strokeCap,
     syntheticPaddingData,
     syntheticPaddingFieldCompliance,
@@ -1757,6 +1878,7 @@ export default function App() {
     setErrorLevel(preset.errorLevel);
     setUserSize(preset.userSize);
     setFillColor(preset.fillColor);
+    setIsPlayingMasks(preset.isPlayingMasks);
     setQrDarkColor(preset.qrDarkColor);
     setQrLightColor(preset.qrLightColor);
     setFieldFirstColor(preset.fieldFirstColor);
@@ -1770,6 +1892,7 @@ export default function App() {
     setConnectorStyle(preset.connectorStyle);
     setPathStrokeSize(preset.pathStrokeSize);
     setPathSmoothing(preset.pathSmoothing);
+    setStandaloneDotScale(preset.standaloneDotScale);
     setPaddingModules(preset.paddingModules);
     setSyntheticPaddingData(preset.syntheticPaddingData);
     setSyntheticPaddingFieldCompliance(preset.syntheticPaddingFieldCompliance);
@@ -2260,6 +2383,24 @@ export default function App() {
                 value={pathStrokeSize}
               />
               <span className="field-hint">2x is thicker. 3x is thinner.</span>
+            </div>
+
+            <div className="field">
+              <label className="field-label range-label" htmlFor="standaloneDotScale">
+                <span>Standalone dot size</span>
+                <span>{standaloneDotScale.toFixed(2)}x</span>
+              </label>
+              <input
+                className="ui-range"
+                id="standaloneDotScale"
+                max="4"
+                min="1"
+                onChange={(event) => setStandaloneDotScale(Number.parseFloat(event.target.value))}
+                step="0.01"
+                type="range"
+                value={standaloneDotScale}
+              />
+              <span className="field-hint">Applies to unconnected rounded dots in SVG path mode.</span>
             </div>
 
             <div className="field">
