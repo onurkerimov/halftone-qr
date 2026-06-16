@@ -163,8 +163,15 @@ export default function App() {
   const [qrResolution, setQrResolution] = useState(41);
   const backgroundResolutionMax =
     backgroundSource === "field" ? maxGeneratedFieldResolution : qrResolution;
-  const effectiveBackgroundPixelation = Math.min(backgroundPixelation, backgroundResolutionMax);
-  const generatedFieldResolution = Math.min(backgroundPixelation, maxGeneratedFieldResolution);
+  const effectiveBackgroundPixelation =
+    backgroundSource === "field"
+      ? clamp(
+          backgroundPixelation > 0 ? backgroundPixelation : maxGeneratedFieldResolution,
+          1,
+          maxGeneratedFieldResolution,
+        )
+      : Math.min(backgroundPixelation, backgroundResolutionMax);
+  const generatedFieldResolution = effectiveBackgroundPixelation;
   const fieldContext: FieldContext = {
     mouse: mouseModulation ? fieldMouse : null,
     phase: fieldPhase,
@@ -228,7 +235,7 @@ export default function App() {
           effectiveBackgroundImageHref,
           backgroundImageRef.current,
           backgroundSource,
-          Math.min(backgroundPixelation, backgroundSource === "field" ? maxGeneratedFieldResolution : qrBytes.length),
+          effectiveBackgroundPixelation,
           joinAlgorithm,
           allowDiagonalJoins,
           angleField,

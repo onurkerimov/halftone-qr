@@ -52,7 +52,7 @@ export const qrMaskPatterns: QRMaskPattern[] = [0, 1, 2, 3, 4, 5, 6, 7];
 
 export const strokeCaps: StrokeCap[] = ["square", "round"];
 
-export const maxGeneratedFieldResolution = 512;
+export const maxGeneratedFieldResolution = 256;
 
 export const defaultFieldContext: FieldContext = {
   mouse: null,
@@ -64,7 +64,7 @@ export const mainPresetSettings: PresetSettings = {
   angleField: "rings",
   angleFieldSpeed: 100,
   backgroundImageHref: "",
-  backgroundPixelation: 0,
+  backgroundPixelation: maxGeneratedFieldResolution,
   backgroundSource: "field",
   connectorStyle: "dots",
   dotShrinkage: 2,

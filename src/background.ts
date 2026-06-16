@@ -1,4 +1,5 @@
 import { getFieldVector } from "./field";
+import { maxGeneratedFieldResolution } from "./constants";
 import type { AngleField, FieldContext, RenderRect } from "./types";
 import { clamp } from "./utils";
 
@@ -100,7 +101,8 @@ export function createGeneratedFieldBackground(
   secondColor: string,
   sourceResolution: number,
 ): string {
-  const size = sourceResolution > 0 ? sourceResolution : 480;
+  const requestedSize = sourceResolution > 0 ? sourceResolution : maxGeneratedFieldResolution;
+  const size = clamp(Math.round(requestedSize), 1, maxGeneratedFieldResolution);
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;

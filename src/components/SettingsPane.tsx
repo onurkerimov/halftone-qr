@@ -383,9 +383,7 @@ export function SettingsPane({
               <span>{backgroundSource === "field" ? "Angle field resolution" : "Background pixelation"}</span>
               <span>
                 {effectiveBackgroundPixelation === 0
-                  ? backgroundSource === "field"
-                    ? "Full"
-                    : "Off"
+                  ? "Off"
                   : backgroundSource === "field"
                     ? `${effectiveBackgroundPixelation} x ${effectiveBackgroundPixelation}`
                     : `${effectiveBackgroundPixelation} / ${qrResolution}`}
@@ -395,7 +393,7 @@ export function SettingsPane({
               className="ui-range"
               id="backgroundPixelation"
               max={backgroundResolutionMax}
-              min="0"
+              min={backgroundSource === "field" ? "1" : "0"}
               onChange={(event) => setBackgroundPixelation(Number.parseInt(event.target.value, 10))}
               step="1"
               type="range"
