@@ -63,6 +63,7 @@ type RenderImage = {
   height: number;
   href: string;
   kind: "image";
+  pixelated?: boolean;
   width: number;
   x: number;
   y: number;
@@ -110,6 +111,7 @@ const connectorStyles: ConnectorStyle[] = ["dots", "paths"];
 const backgroundSources: BackgroundSource[] = ["color", "uploaded", "field"];
 const qrMaskPatterns: QRMaskPattern[] = [0, 1, 2, 3, 4, 5, 6, 7];
 const strokeCaps: StrokeCap[] = ["square", "round"];
+const maxGeneratedFieldResolution = 512;
 const defaultFieldContext: FieldContext = {
   mouse: null,
   phase: 0,
@@ -139,8 +141,25 @@ function parseQrSize(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 10 ? value : fallback;
 }
 
+function parsePadding(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 8 ? value : fallback;
+}
+
+function parseBackgroundPixelation(value: unknown, fallback: number): number {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= maxGeneratedFieldResolution
+    ? value
+    : fallback;
+}
+
 function parsePercentage(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100 ? value : fallback;
+}
+
+function parseSpeedPercentage(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 300 ? value : fallback;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -205,18 +224,79 @@ function drawCoverImage(
   y: number,
   width: number,
   height: number,
+  pixelated = false,
 ) {
   const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
   const sourceWidth = width / scale;
   const sourceHeight = height / scale;
   const sourceX = (image.naturalWidth - sourceWidth) / 2;
   const sourceY = (image.naturalHeight - sourceHeight) / 2;
+  const previousImageSmoothing = ctx.imageSmoothingEnabled;
 
+  ctx.imageSmoothingEnabled = !pixelated;
   ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
+  ctx.imageSmoothingEnabled = previousImageSmoothing;
 }
 
-function createGeneratedFieldBackground(angleField: AngleField, fieldContext: FieldContext): string {
-  const size = 480;
+function createPixelatedBackgroundRects(
+  image: HTMLImageElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  cells: number,
+): RenderRect[] {
+  const gridSize = clamp(Math.round(cells), 1, Math.max(1, Math.floor(Math.min(width, height))));
+  const sampleCanvas = document.createElement("canvas");
+  sampleCanvas.width = gridSize;
+  sampleCanvas.height = gridSize;
+
+  const sampleContext = get2d(sampleCanvas);
+  sampleContext.imageSmoothingEnabled = false;
+  drawCoverImage(sampleContext, image, 0, 0, gridSize, gridSize);
+
+  const pixels = sampleContext.getImageData(0, 0, gridSize, gridSize).data;
+  const rects: RenderRect[] = [];
+
+  for (let row = 0; row < gridSize; row += 1) {
+    const rectY = y + (height * row) / gridSize;
+    const rectHeight = y + (height * (row + 1)) / gridSize - rectY;
+
+    for (let column = 0; column < gridSize; column += 1) {
+      const index = (row * gridSize + column) * 4;
+      const rectX = x + (width * column) / gridSize;
+      const rectWidth = x + (width * (column + 1)) / gridSize - rectX;
+
+      rects.push({
+        fill: `rgb(${pixels[index]}, ${pixels[index + 1]}, ${pixels[index + 2]})`,
+        height: rectHeight,
+        kind: "rect",
+        width: rectWidth,
+        x: rectX,
+        y: rectY,
+      });
+    }
+  }
+
+  return rects;
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  return [
+    Number.parseInt(hex.slice(1, 3), 16),
+    Number.parseInt(hex.slice(3, 5), 16),
+    Number.parseInt(hex.slice(5, 7), 16),
+  ];
+}
+
+function createGeneratedFieldBackground(
+  angleField: AngleField,
+  fieldContext: FieldContext,
+  firstColor: string,
+  secondColor: string,
+  sourceResolution: number,
+): string {
+  const size = sourceResolution > 0 ? sourceResolution : 480;
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
@@ -224,8 +304,8 @@ function createGeneratedFieldBackground(angleField: AngleField, fieldContext: Fi
   const ctx = get2d(canvas);
   const image = ctx.createImageData(size, size);
   const data = image.data;
-  const pink = [255, 62, 181];
-  const blue = [20, 156, 255];
+  const firstStripe = hexToRgb(firstColor);
+  const secondStripe = hexToRgb(secondColor);
 
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
@@ -233,7 +313,10 @@ function createGeneratedFieldBackground(angleField: AngleField, fieldContext: Fi
       const fieldLength = Math.hypot(fieldVector.x, fieldVector.y) || 1;
       const normalX = -fieldVector.y / fieldLength;
       const normalY = fieldVector.x / fieldLength;
-      const stripe = Math.sin((x * normalX + y * normalY) * 0.08 + fieldContext.phase * 1.8) >= 0 ? pink : blue;
+      const stripe =
+        Math.sin((x * normalX + y * normalY) * 0.08 + fieldContext.phase * 1.8) >= 0
+          ? firstStripe
+          : secondStripe;
       const index = (y * size + x) * 4;
 
       data[index] = stripe[0];
@@ -483,11 +566,21 @@ function rotateVector(vector: Point, angle: number): Point {
   };
 }
 
+function normalizeVector(vector: Point): Point {
+  const length = Math.hypot(vector.x, vector.y) || 1;
+
+  return {
+    x: vector.x / length,
+    y: vector.y / length,
+  };
+}
+
 function applyFieldDynamics(vector: Point, x: number, y: number, size: number, fieldContext: FieldContext): Point {
-  const phaseTurn = fieldContext.phase * 0.16;
+  const phaseTurn = fieldContext.phase * 0.035;
+  const phaseVector = rotateVector(vector, phaseTurn);
 
   if (!fieldContext.mouse) {
-    return rotateVector(vector, phaseTurn);
+    return phaseVector;
   }
 
   const normalizedX = x / Math.max(1, size - 1);
@@ -497,9 +590,13 @@ function applyFieldDynamics(vector: Point, x: number, y: number, size: number, f
   const mouseDistance = Math.hypot(mouseDx, mouseDy);
   const mouseAngle = Math.atan2(mouseDy, mouseDx);
   const ripple = Math.sin(mouseDistance * Math.PI * 7 - fieldContext.phase * 2.4);
-  const falloff = Math.max(0, 1 - mouseDistance * 1.6);
+  const falloff = Math.max(0, 1 - mouseDistance * 1.85);
+  const mouseVector = rotateVector(vector, ripple * falloff * 0.38 + mouseAngle * falloff * 0.06);
 
-  return rotateVector(vector, phaseTurn + ripple * falloff * 0.95 + mouseAngle * falloff * 0.12);
+  return normalizeVector({
+    x: phaseVector.x * (1 - falloff * 0.22) + mouseVector.x * falloff * 0.22,
+    y: phaseVector.y * (1 - falloff * 0.22) + mouseVector.y * falloff * 0.22,
+  });
 }
 
 function getFieldVector(
@@ -535,8 +632,8 @@ function getFieldVector(
     case "spiral":
       return applyFieldDynamics(
         {
-          x: Math.cos(phase * 0.45) * (dx / distance) - Math.sin(phase * 0.45) * (dy / distance),
-          y: Math.cos(phase * 0.45) * (dy / distance) + Math.sin(phase * 0.45) * (dx / distance),
+          x: Math.cos(phase * 0.12) * (dx / distance) - Math.sin(phase * 0.12) * (dy / distance),
+          y: Math.cos(phase * 0.12) * (dy / distance) + Math.sin(phase * 0.12) * (dx / distance),
         },
         x,
         y,
@@ -545,7 +642,7 @@ function getFieldVector(
       );
     case "wavy":
       return applyFieldDynamics(
-        { x: 1, y: Math.sin((y / Math.max(1, size - 1)) * Math.PI * 4 + phase * 1.3) },
+        { x: 1, y: Math.sin((y / Math.max(1, size - 1)) * Math.PI * 4 + phase * 0.45) },
         x,
         y,
         size,
@@ -554,8 +651,8 @@ function getFieldVector(
     case "pinwheel":
       return applyFieldDynamics(
         {
-          x: Math.cos(Math.atan2(dy, dx) * 3 + phase),
-          y: Math.sin(Math.atan2(dy, dx) * 3 + phase),
+          x: Math.cos(Math.atan2(dy, dx) * 3 + phase * 0.35),
+          y: Math.sin(Math.atan2(dy, dx) * 3 + phase * 0.35),
         },
         x,
         y,
@@ -686,10 +783,10 @@ function createJoinEdges(
   }
 }
 
-function getDotCenter(dot: DotCell): Point {
+function getDotCenter(dot: DotCell, padding: number): Point {
   return {
-    x: dot.byteRow * blockSize + blockSize / 2,
-    y: dot.byteCell * blockSize + blockSize / 2,
+    x: padding + dot.byteRow * blockSize + blockSize / 2,
+    y: padding + dot.byteCell * blockSize + blockSize / 2,
   };
 }
 
@@ -811,7 +908,12 @@ function createRenderResult(
   controlBytes: QRMatrix,
   dotShrinkage: DotShrinkage,
   fillColor: string,
+  qrDarkColor: string,
+  qrLightColor: string,
   backgroundImageHref: string,
+  backgroundImage: HTMLImageElement | null,
+  backgroundSource: BackgroundSource,
+  backgroundPixelation: number,
   joinAlgorithm: JoinAlgorithm,
   allowDiagonalJoins: boolean,
   angleField: AngleField,
@@ -819,10 +921,17 @@ function createRenderResult(
   connectorStyle: ConnectorStyle,
   pathSmoothing: number,
   strokeCap: StrokeCap,
+  paddingModules: number,
 ): RenderResult {
-  const width = qrBytes.length * blockSize;
+  const qrWidth = qrBytes.length * blockSize;
+  const padding = paddingModules * blockSize;
+  const width = qrWidth + padding * 2;
   const dotSize = blockSize / dotShrinkage;
   const dotOffset = (blockSize - dotSize) / 2;
+  const backgroundPixelationGrid =
+    backgroundPixelation > 0
+      ? Math.round((qrBytes.length * qrBytes.length) / backgroundPixelation)
+      : 0;
   const joinEdges = createJoinEdges(
     joinAlgorithm,
     qrBytes,
@@ -847,14 +956,19 @@ function createRenderResult(
   ];
 
   if (backgroundImageHref) {
-    shapes.push({
-      height: width,
-      href: backgroundImageHref,
-      kind: "image",
-      width,
-      x: 0,
-      y: 0,
-    });
+    if (backgroundSource === "uploaded" && backgroundImage && backgroundPixelation > 0) {
+      shapes.push(...createPixelatedBackgroundRects(backgroundImage, 0, 0, width, width, backgroundPixelationGrid));
+    } else {
+      shapes.push({
+        height: width,
+        href: backgroundImageHref,
+        kind: "image",
+        pixelated: backgroundSource === "field" && backgroundPixelation > 0,
+        width,
+        x: 0,
+        y: 0,
+      });
+    }
   }
 
   for (let byteRow = 0; byteRow < qrBytes.length; byteRow += 1) {
@@ -864,22 +978,22 @@ function createRenderResult(
       }
 
       shapes.push({
-        fill: qrBytes[byteRow][byteCell] ? "black" : "white",
+        fill: qrBytes[byteRow][byteCell] ? qrDarkColor : qrLightColor,
         height: dotSize,
         kind: "rect",
         width: dotSize,
-        x: byteRow * blockSize + dotOffset,
-        y: byteCell * blockSize + dotOffset,
+        x: padding + byteRow * blockSize + dotOffset,
+        y: padding + byteCell * blockSize + dotOffset,
       });
     }
   }
 
   if (connectorStyle === "paths") {
     for (const chain of createEdgeChains(joinEdges)) {
-      const color = qrBytes[chain[0].byteRow][chain[0].byteCell] ? "black" : "white";
+      const color = qrBytes[chain[0].byteRow][chain[0].byteCell] ? qrDarkColor : qrLightColor;
 
       shapes.push({
-        d: createSmoothedPathD(chain.map(getDotCenter), pathSmoothing),
+        d: createSmoothedPathD(chain.map((dot) => getDotCenter(dot, padding)), pathSmoothing),
         kind: "path",
         stroke: color,
         strokeLinecap: strokeCap,
@@ -888,7 +1002,7 @@ function createRenderResult(
     }
   } else {
     for (const edge of joinEdges) {
-      const color = qrBytes[edge.from.byteRow][edge.from.byteCell] ? "black" : "white";
+      const color = qrBytes[edge.from.byteRow][edge.from.byteCell] ? qrDarkColor : qrLightColor;
 
       for (let connector = 1; connector < dotShrinkage; connector += 1) {
         const rowDirection = Math.sign(edge.to.byteRow - edge.from.byteRow);
@@ -899,8 +1013,8 @@ function createRenderResult(
           height: dotSize,
           kind: "rect",
           width: dotSize,
-          x: edge.from.byteRow * blockSize + dotOffset + dotSize * connector * rowDirection,
-          y: edge.from.byteCell * blockSize + dotOffset + dotSize * connector * cellDirection,
+          x: padding + edge.from.byteRow * blockSize + dotOffset + dotSize * connector * rowDirection,
+          y: padding + edge.from.byteCell * blockSize + dotOffset + dotSize * connector * cellDirection,
         });
       }
     }
@@ -912,12 +1026,12 @@ function createRenderResult(
 
       if (controlByte !== null) {
         shapes.push({
-          fill: controlByte ? "black" : "white",
+          fill: controlByte ? qrDarkColor : qrLightColor,
           height: blockSize,
           kind: "rect",
           width: blockSize,
-          x: byteRow * blockSize,
-          y: byteCell * blockSize,
+          x: padding + byteRow * blockSize,
+          y: padding + byteCell * blockSize,
         });
       }
     }
@@ -943,7 +1057,7 @@ function drawRenderResult(
       ctx.fillRect(shape.x, shape.y, shape.width, shape.height);
     } else if (shape.kind === "image") {
       if (backgroundImage) {
-        drawCoverImage(ctx, backgroundImage, shape.x, shape.y, shape.width, shape.height);
+        drawCoverImage(ctx, backgroundImage, shape.x, shape.y, shape.width, shape.height, shape.pixelated);
       }
     } else {
       const path = new Path2D(shape.d);
@@ -967,7 +1081,8 @@ function createSvgHref(renderResult: RenderResult): string {
       }
 
       if (shape.kind === "image") {
-        return `<image x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}" href="${escapeAttribute(shape.href)}" preserveAspectRatio="xMidYMid slice" />`;
+        const pixelated = shape.pixelated ? ' style="image-rendering:pixelated"' : "";
+        return `<image x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}" href="${escapeAttribute(shape.href)}" preserveAspectRatio="xMidYMid slice"${pixelated} />`;
       }
 
       return `<path d="${shape.d}" fill="none" stroke="${shape.stroke}" stroke-width="${shape.strokeWidth}" stroke-linecap="${shape.strokeLinecap}" />`;
@@ -986,6 +1101,18 @@ export default function App() {
   );
   const [userSize, setUserSize] = useStoredState("userSize", 6, parseQrSize);
   const [fillColor, setFillColor] = useStoredState("fillColor", "#7fb8d8", parseFillColor);
+  const [qrDarkColor, setQrDarkColor] = useStoredState("qrDarkColor", "#000000", parseFillColor);
+  const [qrLightColor, setQrLightColor] = useStoredState("qrLightColor", "#ffffff", parseFillColor);
+  const [fieldFirstColor, setFieldFirstColor] = useStoredState(
+    "fieldFirstColor",
+    "#ff3eb5",
+    parseFillColor,
+  );
+  const [fieldSecondColor, setFieldSecondColor] = useStoredState(
+    "fieldSecondColor",
+    "#149cff",
+    parseFillColor,
+  );
   const [backgroundSource, setBackgroundSource] = useStoredState<BackgroundSource>(
     "backgroundSource",
     "field",
@@ -1018,6 +1145,12 @@ export default function App() {
     (value, fallback) => parseOption(connectorStyles, value, fallback),
   );
   const [pathSmoothing, setPathSmoothing] = useStoredState("pathSmoothing", 0, parsePercentage);
+  const [paddingModules, setPaddingModules] = useStoredState("paddingModules", 0, parsePadding);
+  const [backgroundPixelation, setBackgroundPixelation] = useStoredState(
+    "backgroundPixelation",
+    0,
+    parseBackgroundPixelation,
+  );
   const [maskPattern, setMaskPattern] = useStoredState<QRMaskPattern>("maskPattern", 0, (value, fallback) =>
     parseOption(qrMaskPatterns, value, fallback),
   );
@@ -1029,17 +1162,27 @@ export default function App() {
     true,
     parseBoolean,
   );
+  const [angleFieldSpeed, setAngleFieldSpeed] = useStoredState(
+    "angleFieldSpeed",
+    100,
+    parseSpeedPercentage,
+  );
   const [mouseModulation, setMouseModulation] = useStoredState(
     "mouseModulation",
     true,
     parseBoolean,
   );
+  const [advancedOpen, setAdvancedOpen] = useStoredState("advancedOpen", false, parseBoolean);
   const [isPlayingMasks, setIsPlayingMasks] = useState(false);
   const [generatedBackgroundHref, setGeneratedBackgroundHref] = useState("");
   const [fieldPhase, setFieldPhase] = useState(0);
   const [fieldMouse, setFieldMouse] = useState<Point | null>(null);
   const [pngHref, setPngHref] = useState("about:blank");
   const [svgHref, setSvgHref] = useState("about:blank");
+  const [qrResolution, setQrResolution] = useState(41);
+  const backgroundResolutionMax =
+    backgroundSource === "field" ? maxGeneratedFieldResolution : qrResolution;
+  const effectiveBackgroundPixelation = Math.min(backgroundPixelation, backgroundResolutionMax);
   const fieldContext: FieldContext = {
     mouse: mouseModulation ? fieldMouse : null,
     phase: fieldPhase,
@@ -1053,6 +1196,8 @@ export default function App() {
 
   const outputRef = useRef<HTMLCanvasElement | null>(null);
   const backgroundImageRef = useRef<HTMLImageElement | null>(null);
+  const fieldMouseRef = useRef<Point | null>(null);
+  const targetFieldMouseRef = useRef<Point | null>(null);
   const [backgroundImageVersion, setBackgroundImageVersion] = useState(0);
 
   const halftoneQR = useCallback(
@@ -1068,7 +1213,12 @@ export default function App() {
         controlBytes,
         dotShrinkage,
         fillColor,
+        qrDarkColor,
+        qrLightColor,
         effectiveBackgroundImageHref,
+        backgroundImageRef.current,
+        backgroundSource,
+        effectiveBackgroundPixelation,
         joinAlgorithm,
         allowDiagonalJoins,
         angleField,
@@ -1076,7 +1226,9 @@ export default function App() {
         connectorStyle,
         pathSmoothing,
         strokeCap,
+        paddingModules,
       );
+      setQrResolution(qrBytes.length);
       drawRenderResult(canvas, renderResult, backgroundImageRef.current);
       setPngHref(canvas.toDataURL("image/png"));
       setSvgHref(createSvgHref(renderResult));
@@ -1084,14 +1236,19 @@ export default function App() {
     [
       allowDiagonalJoins,
       angleField,
+      backgroundSource,
+      effectiveBackgroundPixelation,
       connectorStyle,
       dotShrinkage,
       effectiveBackgroundImageHref,
       fieldMouse,
       fieldPhase,
       fillColor,
+      qrDarkColor,
+      qrLightColor,
       joinAlgorithm,
       mouseModulation,
+      paddingModules,
       pathSmoothing,
       strokeCap,
     ],
@@ -1133,6 +1290,10 @@ export default function App() {
   }, [regen]);
 
   useEffect(() => {
+    fieldMouseRef.current = fieldMouse;
+  }, [fieldMouse]);
+
+  useEffect(() => {
     let cancelled = false;
 
     if (!effectiveBackgroundImageHref) {
@@ -1166,8 +1327,25 @@ export default function App() {
       return;
     }
 
-    setGeneratedBackgroundHref(createGeneratedFieldBackground(angleField, fieldContext));
-  }, [angleField, backgroundSource, fieldMouse, fieldPhase, mouseModulation]);
+    setGeneratedBackgroundHref(
+      createGeneratedFieldBackground(
+        angleField,
+        fieldContext,
+        fieldFirstColor,
+        fieldSecondColor,
+        effectiveBackgroundPixelation,
+      ),
+    );
+  }, [
+    angleField,
+    backgroundSource,
+    fieldFirstColor,
+    fieldMouse,
+    fieldPhase,
+    fieldSecondColor,
+    mouseModulation,
+    effectiveBackgroundPixelation,
+  ]);
 
   useEffect(() => {
     if (!evolveAngleField) {
@@ -1175,11 +1353,64 @@ export default function App() {
     }
 
     const interval = window.setInterval(() => {
-      setFieldPhase((phase) => (phase + 0.2) % (Math.PI * 2));
+      setFieldPhase((phase) => (phase + 0.2 * (angleFieldSpeed / 100)) % (Math.PI * 2));
     }, 80);
 
     return () => window.clearInterval(interval);
-  }, [evolveAngleField]);
+  }, [angleFieldSpeed, evolveAngleField]);
+
+  useEffect(() => {
+    if (!mouseModulation) {
+      targetFieldMouseRef.current = null;
+      fieldMouseRef.current = null;
+      setFieldMouse(null);
+      return;
+    }
+
+    let animationFrame = 0;
+
+    const tick = () => {
+      const target = targetFieldMouseRef.current;
+      const current = fieldMouseRef.current;
+
+      if (!target) {
+        if (current) {
+          fieldMouseRef.current = null;
+          setFieldMouse(null);
+        }
+
+        animationFrame = window.requestAnimationFrame(tick);
+        return;
+      }
+
+      if (!current) {
+        fieldMouseRef.current = target;
+        setFieldMouse(target);
+        animationFrame = window.requestAnimationFrame(tick);
+        return;
+      }
+
+      const easing = 0.18;
+      const next = {
+        x: current.x + (target.x - current.x) * easing,
+        y: current.y + (target.y - current.y) * easing,
+      };
+
+      if (Math.hypot(next.x - target.x, next.y - target.y) < 0.001) {
+        fieldMouseRef.current = target;
+        setFieldMouse(target);
+      } else {
+        fieldMouseRef.current = next;
+        setFieldMouse(next);
+      }
+
+      animationFrame = window.requestAnimationFrame(tick);
+    };
+
+    animationFrame = window.requestAnimationFrame(tick);
+
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [mouseModulation]);
 
   useEffect(() => {
     if (!isPlayingMasks) {
@@ -1217,17 +1448,58 @@ export default function App() {
       }
 
       const bounds = event.currentTarget.getBoundingClientRect();
-      setFieldMouse({
+      targetFieldMouseRef.current = {
         x: clamp((event.clientX - bounds.left) / bounds.width, 0, 1),
         y: clamp((event.clientY - bounds.top) / bounds.height, 0, 1),
-      });
+      };
     },
     [mouseModulation],
   );
 
   const handlePreviewPointerLeave = useCallback(() => {
-    setFieldMouse(null);
+    targetFieldMouseRef.current = null;
   }, []);
+
+  const applyMainPreset = () => {
+    setErrorLevel("H");
+    setUserSize(6);
+    setFillColor("#7fb8d8");
+    setQrDarkColor("#000000");
+    setQrLightColor("#ffffff");
+    setFieldFirstColor("#ff3eb5");
+    setFieldSecondColor("#149cff");
+    setBackgroundSource("field");
+    setDotShrinkage(2);
+    setJoinAlgorithm("fieldSnake");
+    setAllowDiagonalJoins(true);
+    setAngleField("rings");
+    setConnectorStyle("dots");
+    setPathSmoothing(0);
+    setPaddingModules(0);
+    setBackgroundPixelation(0);
+    setMaskPattern(0);
+    setStrokeCap("square");
+    setEvolveAngleField(true);
+    setAngleFieldSpeed(100);
+    setMouseModulation(true);
+  };
+
+  const applySmoothPathsPreset = () => {
+    setConnectorStyle("paths");
+    setStrokeCap("round");
+    setPathSmoothing(100);
+  };
+
+  const resetSettings = () => {
+    applyMainPreset();
+    setBackgroundImageHref("");
+    setFieldMouse(null);
+    fieldMouseRef.current = null;
+    targetFieldMouseRef.current = null;
+    setFieldPhase(0);
+    setGeneratedBackgroundHref("");
+    setIsPlayingMasks(false);
+  };
 
   return (
     <div className="app-shell">
@@ -1252,6 +1524,40 @@ export default function App() {
                 value={text}
               />
             </div>
+          </section>
+
+          <section className="settings-section advanced-section">
+            <button
+              aria-expanded={advancedOpen}
+              className="advanced-toggle"
+              onClick={() => setAdvancedOpen((open) => !open)}
+              type="button"
+            >
+              <span>
+                <span className="field-label">Advanced</span>
+                <span className="field-hint">Presets, colors, path behavior, masks, and QR version.</span>
+              </span>
+              <span aria-hidden="true" className="advanced-chevron">
+                {advancedOpen ? "-" : "+"}
+              </span>
+            </button>
+
+            {advancedOpen ? (
+              <div className="advanced-content">
+                <div className="field">
+                  <span className="field-label">Presets</span>
+                  <div className="preset-row">
+                    <button className="ui-button" onClick={applyMainPreset} type="button">
+                      Main preset
+                    </button>
+                    <button className="ui-button secondary" onClick={applySmoothPathsPreset} type="button">
+                      Smooth paths
+                    </button>
+                    <button className="ui-button secondary" onClick={resetSettings} type="button">
+                      Reset settings
+                    </button>
+                  </div>
+                </div>
 
             <div className="field">
               <label className="field-label" htmlFor="fillColor">
@@ -1267,6 +1573,76 @@ export default function App() {
                   value={fillColor}
                 />
                 <span className="color-value">{fillColor}</span>
+              </div>
+            </div>
+
+            <div className="color-grid">
+              <div className="field">
+                <label className="field-label" htmlFor="qrDarkColor">
+                  QR dark
+                </label>
+                <div className="color-row">
+                  <input
+                    className="color-input"
+                    id="qrDarkColor"
+                    onChange={(event) => setQrDarkColor(event.target.value)}
+                    title="Choose the dark QR color"
+                    type="color"
+                    value={qrDarkColor}
+                  />
+                  <span className="color-value">{qrDarkColor}</span>
+                </div>
+              </div>
+
+              <div className="field">
+                <label className="field-label" htmlFor="qrLightColor">
+                  QR light
+                </label>
+                <div className="color-row">
+                  <input
+                    className="color-input"
+                    id="qrLightColor"
+                    onChange={(event) => setQrLightColor(event.target.value)}
+                    title="Choose the light QR color"
+                    type="color"
+                    value={qrLightColor}
+                  />
+                  <span className="color-value">{qrLightColor}</span>
+                </div>
+              </div>
+
+              <div className="field">
+                <label className="field-label" htmlFor="fieldFirstColor">
+                  Field stripe A
+                </label>
+                <div className="color-row">
+                  <input
+                    className="color-input"
+                    id="fieldFirstColor"
+                    onChange={(event) => setFieldFirstColor(event.target.value)}
+                    title="Choose the first generated field color"
+                    type="color"
+                    value={fieldFirstColor}
+                  />
+                  <span className="color-value">{fieldFirstColor}</span>
+                </div>
+              </div>
+
+              <div className="field">
+                <label className="field-label" htmlFor="fieldSecondColor">
+                  Field stripe B
+                </label>
+                <div className="color-row">
+                  <input
+                    className="color-input"
+                    id="fieldSecondColor"
+                    onChange={(event) => setFieldSecondColor(event.target.value)}
+                    title="Choose the second generated field color"
+                    type="color"
+                    value={fieldSecondColor}
+                  />
+                  <span className="color-value">{fieldSecondColor}</span>
+                </div>
               </div>
             </div>
 
@@ -1320,9 +1696,37 @@ export default function App() {
                   : "Optional. The color remains the fallback behind the image."}
               </span>
             </div>
-          </section>
 
-          <section className="settings-section">
+            <div className="field">
+              <label className="field-label range-label" htmlFor="backgroundPixelation">
+                <span>{backgroundSource === "field" ? "Angle field resolution" : "Background pixelation"}</span>
+                <span>
+                  {effectiveBackgroundPixelation === 0
+                    ? backgroundSource === "field"
+                      ? "Full"
+                      : "Off"
+                    : backgroundSource === "field"
+                      ? `${effectiveBackgroundPixelation} x ${effectiveBackgroundPixelation}`
+                      : `${effectiveBackgroundPixelation} / ${qrResolution}`}
+                </span>
+              </label>
+              <input
+                className="ui-range"
+                id="backgroundPixelation"
+                max={backgroundResolutionMax}
+                min="0"
+                onChange={(event) => setBackgroundPixelation(Number.parseInt(event.target.value, 10))}
+                step="1"
+                type="range"
+                value={effectiveBackgroundPixelation}
+              />
+              <span className="field-hint">
+                {backgroundSource === "field"
+                  ? "Sets the generated field image resolution before it is scaled behind the QR."
+                  : "Pixelates uploaded backgrounds. The maximum grid matches the QR module resolution."}
+              </span>
+            </div>
+
             <div className="field">
               <span className="field-label">Dot shrinkage</span>
               <div aria-label="Dot shrinkage" className="segmented-control" role="radiogroup">
@@ -1405,6 +1809,24 @@ export default function App() {
               />
             </label>
 
+            <div className="field">
+              <label className="field-label range-label" htmlFor="angleFieldSpeed">
+                <span>Evolution speed</span>
+                <span>{Math.round(angleFieldSpeed)}%</span>
+              </label>
+              <input
+                className="ui-range"
+                id="angleFieldSpeed"
+                max="300"
+                min="0"
+                onChange={(event) => setAngleFieldSpeed(Number.parseInt(event.target.value, 10))}
+                step="5"
+                type="range"
+                value={angleFieldSpeed}
+              />
+              <span className="field-hint">Scales the animated angle-field phase. 100% matches the default speed.</span>
+            </div>
+
             <label className="switch-row" htmlFor="mouseModulation">
               <span>
                 <span className="field-label">Mouse modulation</span>
@@ -1417,6 +1839,8 @@ export default function App() {
                 onChange={(event) => {
                   setMouseModulation(event.target.checked);
                   if (!event.target.checked) {
+                    fieldMouseRef.current = null;
+                    targetFieldMouseRef.current = null;
                     setFieldMouse(null);
                   }
                 }}
@@ -1504,9 +1928,7 @@ export default function App() {
                 type="checkbox"
               />
             </label>
-          </section>
 
-          <section className="settings-section">
             <div className="field">
               <label className="field-label" htmlFor="maskPattern">
                 QR mask pattern
@@ -1576,6 +1998,26 @@ export default function App() {
               </select>
               <span className="field-hint">Auto uses the smallest QR version accepted by the encoder.</span>
             </div>
+
+            <div className="field">
+              <label className="field-label range-label" htmlFor="paddingModules">
+                <span>QR padding</span>
+                <span>{paddingModules} modules</span>
+              </label>
+              <input
+                className="ui-range"
+                id="paddingModules"
+                max="8"
+                min="0"
+                onChange={(event) => setPaddingModules(Number.parseInt(event.target.value, 10))}
+                step="1"
+                type="range"
+                value={paddingModules}
+              />
+              <span className="field-hint">Adds background space around the QR in preview and exports.</span>
+            </div>
+              </div>
+            ) : null}
           </section>
         </form>
       </aside>

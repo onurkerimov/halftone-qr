@@ -118,6 +118,53 @@ h2 {
   padding: 16px;
 }
 
+.advanced-section {
+  gap: 0;
+}
+
+.advanced-toggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.advanced-chevron {
+  align-items: center;
+  background: var(--input);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--accent-strong);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 1.1rem;
+  font-weight: 700;
+  height: 32px;
+  justify-content: center;
+  line-height: 1;
+  width: 32px;
+}
+
+.advanced-toggle:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 6px;
+}
+
+.advanced-content {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 18px;
+  margin-top: 16px;
+  padding-top: 16px;
+}
+
 .field {
   display: grid;
   gap: 8px;
@@ -187,6 +234,12 @@ h2 {
   grid-template-columns: 48px 1fr;
 }
 
+.color-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr 1fr;
+}
+
 .color-input {
   appearance: none;
   background: transparent;
@@ -253,6 +306,12 @@ h2 {
   display: grid;
   gap: 10px;
   grid-template-columns: minmax(0, 1fr) 88px;
+}
+
+.preset-row {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr 1fr 1fr;
 }
 
 .ui-range {
@@ -455,6 +514,11 @@ h2 {
 
   .preview-toolbar {
     align-items: start;
+  }
+
+  .color-grid,
+  .preset-row {
+    grid-template-columns: 1fr;
   }
 
   .qr-canvas {
