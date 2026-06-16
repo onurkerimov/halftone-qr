@@ -349,6 +349,10 @@ function createQrMatrices(size: number, errorLevel: ErrorLevel, text: string, ma
   };
 }
 
+function getQrMatrixCacheKey(size: number, errorLevel: ErrorLevel, text: string, maskPattern: QRMaskPattern): string {
+  return JSON.stringify([size, errorLevel, text, maskPattern]);
+}
+
 function isDataCell(controlBytes: QRMatrix, byteRow: number, byteCell: number): boolean {
   return controlBytes[byteRow]?.[byteCell] === null;
 }
@@ -903,6 +907,94 @@ function createSmoothedPathD(points: Point[], smoothing: number): string {
   return commands.join(" ");
 }
 
+function syntheticPaddingHash(maskPattern: QRMaskPattern, moduleX: number, moduleY: number, salt: number): number {
+  let value = (maskPattern + 1) * 0x9e3779b1;
+  value ^= moduleX * 0x85ebca6b;
+  value ^= moduleY * 0xc2b2ae35;
+  value ^= salt * 0x27d4eb2d;
+  value = Math.imul(value ^ (value >>> 16), 0x7feb352d);
+  value = Math.imul(value ^ (value >>> 15), 0x846ca68b);
+
+  return (value ^ (value >>> 16)) >>> 0;
+}
+
+function syntheticPaddingBit(
+  maskPattern: QRMaskPattern,
+  moduleX: number,
+  moduleY: number,
+  totalModules: number,
+  angleField: AngleField,
+  fieldContext: FieldContext,
+  fieldCompliance: number,
+): boolean {
+  const randomBit = (syntheticPaddingHash(maskPattern, moduleX, moduleY, 0) & 1) === 1;
+
+  if (fieldCompliance <= 0) {
+    return randomBit;
+  }
+
+  const fieldVector = getFieldVector(angleField, moduleX, moduleY, totalModules, fieldContext);
+  const fieldLength = Math.hypot(fieldVector.x, fieldVector.y) || 1;
+  const normalX = -fieldVector.y / fieldLength;
+  const normalY = fieldVector.x / fieldLength;
+  const seedPhase = (maskPattern + 1) * 1.618;
+  const fieldBit = Math.sin((moduleX * normalX + moduleY * normalY) * Math.PI * 0.72 + seedPhase) >= 0;
+  const complianceGate = syntheticPaddingHash(maskPattern, moduleX, moduleY, 1) / 0xffffffff;
+
+  return complianceGate < fieldCompliance / 100 ? fieldBit : randomBit;
+}
+
+function createSyntheticPaddedMatrices(
+  qrBytes: QRMatrix,
+  controlBytes: QRMatrix,
+  paddingModules: number,
+  maskPattern: QRMaskPattern,
+  angleField: AngleField,
+  fieldContext: FieldContext,
+  fieldCompliance: number,
+) {
+  const totalModules = qrBytes.length + paddingModules * 2;
+  const paddedQrBytes: QRMatrix = [];
+  const paddedControlBytes: QRMatrix = [];
+
+  for (let moduleX = 0; moduleX < totalModules; moduleX += 1) {
+    const qrColumn: QRCell[] = [];
+    const controlColumn: QRCell[] = [];
+
+    for (let moduleY = 0; moduleY < totalModules; moduleY += 1) {
+      const qrX = moduleX - paddingModules;
+      const qrY = moduleY - paddingModules;
+      const insideQr = qrX >= 0 && qrX < qrBytes.length && qrY >= 0 && qrY < qrBytes.length;
+
+      if (insideQr) {
+        qrColumn.push(qrBytes[qrX][qrY]);
+        controlColumn.push(controlBytes[qrX][qrY]);
+      } else {
+        qrColumn.push(
+          syntheticPaddingBit(
+            maskPattern,
+            moduleX,
+            moduleY,
+            totalModules,
+            angleField,
+            fieldContext,
+            fieldCompliance,
+          ),
+        );
+        controlColumn.push(null);
+      }
+    }
+
+    paddedQrBytes.push(qrColumn);
+    paddedControlBytes.push(controlColumn);
+  }
+
+  return {
+    controlBytes: paddedControlBytes,
+    qrBytes: paddedQrBytes,
+  };
+}
+
 function createRenderResult(
   qrBytes: QRMatrix,
   controlBytes: QRMatrix,
@@ -922,10 +1014,26 @@ function createRenderResult(
   pathSmoothing: number,
   strokeCap: StrokeCap,
   paddingModules: number,
+  syntheticPaddingData: boolean,
+  syntheticPaddingFieldCompliance: number,
+  maskPattern: QRMaskPattern,
 ): RenderResult {
-  const qrWidth = qrBytes.length * blockSize;
-  const padding = paddingModules * blockSize;
-  const width = qrWidth + padding * 2;
+  const paddedMatrices =
+    syntheticPaddingData && paddingModules > 0
+      ? createSyntheticPaddedMatrices(
+          qrBytes,
+          controlBytes,
+          paddingModules,
+          maskPattern,
+          angleField,
+          fieldContext,
+          syntheticPaddingFieldCompliance,
+        )
+      : { controlBytes, qrBytes };
+  const renderQrBytes = paddedMatrices.qrBytes;
+  const renderControlBytes = paddedMatrices.controlBytes;
+  const padding = syntheticPaddingData ? 0 : paddingModules * blockSize;
+  const width = renderQrBytes.length * blockSize + padding * 2;
   const dotSize = blockSize / dotShrinkage;
   const dotOffset = (blockSize - dotSize) / 2;
   const backgroundPixelationGrid =
@@ -934,8 +1042,8 @@ function createRenderResult(
       : 0;
   const joinEdges = createJoinEdges(
     joinAlgorithm,
-    qrBytes,
-    controlBytes,
+    renderQrBytes,
+    renderControlBytes,
     allowDiagonalJoins,
     angleField,
     fieldContext,
@@ -971,14 +1079,14 @@ function createRenderResult(
     }
   }
 
-  for (let byteRow = 0; byteRow < qrBytes.length; byteRow += 1) {
-    for (let byteCell = 0; byteCell < qrBytes[byteRow].length; byteCell += 1) {
-      if (pathDotKeys.has(dotKey({ byteCell, byteRow })) && isDataCell(controlBytes, byteRow, byteCell)) {
+  for (let byteRow = 0; byteRow < renderQrBytes.length; byteRow += 1) {
+    for (let byteCell = 0; byteCell < renderQrBytes[byteRow].length; byteCell += 1) {
+      if (pathDotKeys.has(dotKey({ byteCell, byteRow })) && isDataCell(renderControlBytes, byteRow, byteCell)) {
         continue;
       }
 
       shapes.push({
-        fill: qrBytes[byteRow][byteCell] ? qrDarkColor : qrLightColor,
+        fill: renderQrBytes[byteRow][byteCell] ? qrDarkColor : qrLightColor,
         height: dotSize,
         kind: "rect",
         width: dotSize,
@@ -990,7 +1098,7 @@ function createRenderResult(
 
   if (connectorStyle === "paths") {
     for (const chain of createEdgeChains(joinEdges)) {
-      const color = qrBytes[chain[0].byteRow][chain[0].byteCell] ? qrDarkColor : qrLightColor;
+      const color = renderQrBytes[chain[0].byteRow][chain[0].byteCell] ? qrDarkColor : qrLightColor;
 
       shapes.push({
         d: createSmoothedPathD(chain.map((dot) => getDotCenter(dot, padding)), pathSmoothing),
@@ -1002,7 +1110,7 @@ function createRenderResult(
     }
   } else {
     for (const edge of joinEdges) {
-      const color = qrBytes[edge.from.byteRow][edge.from.byteCell] ? qrDarkColor : qrLightColor;
+      const color = renderQrBytes[edge.from.byteRow][edge.from.byteCell] ? qrDarkColor : qrLightColor;
 
       for (let connector = 1; connector < dotShrinkage; connector += 1) {
         const rowDirection = Math.sign(edge.to.byteRow - edge.from.byteRow);
@@ -1020,9 +1128,9 @@ function createRenderResult(
     }
   }
 
-  for (let byteRow = 0; byteRow < controlBytes.length; byteRow += 1) {
-    for (let byteCell = 0; byteCell < controlBytes[byteRow].length; byteCell += 1) {
-      const controlByte = controlBytes[byteRow][byteCell];
+  for (let byteRow = 0; byteRow < renderControlBytes.length; byteRow += 1) {
+    for (let byteCell = 0; byteCell < renderControlBytes[byteRow].length; byteCell += 1) {
+      const controlByte = renderControlBytes[byteRow][byteCell];
 
       if (controlByte !== null) {
         shapes.push({
@@ -1145,7 +1253,17 @@ export default function App() {
     (value, fallback) => parseOption(connectorStyles, value, fallback),
   );
   const [pathSmoothing, setPathSmoothing] = useStoredState("pathSmoothing", 0, parsePercentage);
-  const [paddingModules, setPaddingModules] = useStoredState("paddingModules", 0, parsePadding);
+  const [paddingModules, setPaddingModules] = useStoredState("paddingModules", 3, parsePadding);
+  const [syntheticPaddingData, setSyntheticPaddingData] = useStoredState(
+    "syntheticPaddingData",
+    false,
+    parseBoolean,
+  );
+  const [syntheticPaddingFieldCompliance, setSyntheticPaddingFieldCompliance] = useStoredState(
+    "syntheticPaddingFieldCompliance",
+    65,
+    parsePercentage,
+  );
   const [backgroundPixelation, setBackgroundPixelation] = useStoredState(
     "backgroundPixelation",
     0,
@@ -1153,6 +1271,11 @@ export default function App() {
   );
   const [maskPattern, setMaskPattern] = useStoredState<QRMaskPattern>("maskPattern", 0, (value, fallback) =>
     parseOption(qrMaskPatterns, value, fallback),
+  );
+  const [maskPlaySpeed, setMaskPlaySpeed] = useStoredState(
+    "maskPlaySpeed",
+    100,
+    parseSpeedPercentage,
   );
   const [strokeCap, setStrokeCap] = useStoredState<StrokeCap>("strokeCap", "square", (value, fallback) =>
     parseOption(strokeCaps, value, fallback),
@@ -1172,6 +1295,7 @@ export default function App() {
     true,
     parseBoolean,
   );
+  const [mouseSmoothing, setMouseSmoothing] = useStoredState("mouseSmoothing", 30, parsePercentage);
   const [advancedOpen, setAdvancedOpen] = useStoredState("advancedOpen", false, parseBoolean);
   const [isPlayingMasks, setIsPlayingMasks] = useState(false);
   const [generatedBackgroundHref, setGeneratedBackgroundHref] = useState("");
@@ -1197,6 +1321,7 @@ export default function App() {
   const outputRef = useRef<HTMLCanvasElement | null>(null);
   const backgroundImageRef = useRef<HTMLImageElement | null>(null);
   const fieldMouseRef = useRef<Point | null>(null);
+  const qrMatrixCacheRef = useRef(new Map<string, ReturnType<typeof createQrMatrices>>());
   const targetFieldMouseRef = useRef<Point | null>(null);
   const [backgroundImageVersion, setBackgroundImageVersion] = useState(0);
 
@@ -1227,6 +1352,9 @@ export default function App() {
         pathSmoothing,
         strokeCap,
         paddingModules,
+        syntheticPaddingData,
+        syntheticPaddingFieldCompliance,
+        maskPattern,
       );
       setQrResolution(qrBytes.length);
       drawRenderResult(canvas, renderResult, backgroundImageRef.current);
@@ -1247,10 +1375,13 @@ export default function App() {
       qrDarkColor,
       qrLightColor,
       joinAlgorithm,
+      maskPattern,
       mouseModulation,
       paddingModules,
       pathSmoothing,
       strokeCap,
+      syntheticPaddingData,
+      syntheticPaddingFieldCompliance,
     ],
   );
 
@@ -1260,7 +1391,23 @@ export default function App() {
 
     for (let qrSize = firstSize; qrSize <= 10; qrSize += 1) {
       try {
-        const { qrBytes, controlBytes } = createQrMatrices(qrSize, errorLevel, debouncedText, maskPattern);
+        const cacheKey = getQrMatrixCacheKey(qrSize, errorLevel, debouncedText, maskPattern);
+        let matrices = qrMatrixCacheRef.current.get(cacheKey);
+
+        if (!matrices) {
+          matrices = createQrMatrices(qrSize, errorLevel, debouncedText, maskPattern);
+          qrMatrixCacheRef.current.set(cacheKey, matrices);
+
+          if (qrMatrixCacheRef.current.size > 120) {
+            const oldestKey = qrMatrixCacheRef.current.keys().next().value;
+
+            if (oldestKey) {
+              qrMatrixCacheRef.current.delete(oldestKey);
+            }
+          }
+        }
+
+        const { qrBytes, controlBytes } = matrices;
         halftoneQR(qrBytes, controlBytes);
 
         if (userSize !== 0 && userSize !== qrSize) {
@@ -1390,7 +1537,7 @@ export default function App() {
         return;
       }
 
-      const easing = 0.18;
+      const easing = 1 - mouseSmoothing * 0.0095;
       const next = {
         x: current.x + (target.x - current.x) * easing,
         y: current.y + (target.y - current.y) * easing,
@@ -1410,19 +1557,20 @@ export default function App() {
     animationFrame = window.requestAnimationFrame(tick);
 
     return () => window.cancelAnimationFrame(animationFrame);
-  }, [mouseModulation]);
+  }, [mouseModulation, mouseSmoothing]);
 
   useEffect(() => {
-    if (!isPlayingMasks) {
+    if (!isPlayingMasks || maskPlaySpeed <= 0) {
       return;
     }
 
+    const intervalMs = Math.max(20, Math.round(100 / (maskPlaySpeed / 100)));
     const interval = window.setInterval(() => {
       setMaskPattern((current) => (((current + 1) % qrMaskPatterns.length) as QRMaskPattern));
-    }, 100);
+    }, intervalMs);
 
     return () => window.clearInterval(interval);
-  }, [isPlayingMasks, setMaskPattern]);
+  }, [isPlayingMasks, maskPlaySpeed, setMaskPattern]);
 
   const handleBackgroundImageUpload = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -1475,13 +1623,17 @@ export default function App() {
     setAngleField("rings");
     setConnectorStyle("dots");
     setPathSmoothing(0);
-    setPaddingModules(0);
+    setPaddingModules(3);
+    setSyntheticPaddingData(false);
+    setSyntheticPaddingFieldCompliance(65);
     setBackgroundPixelation(0);
     setMaskPattern(0);
+    setMaskPlaySpeed(100);
     setStrokeCap("square");
     setEvolveAngleField(true);
     setAngleFieldSpeed(100);
     setMouseModulation(true);
+    setMouseSmoothing(30);
   };
 
   const applySmoothPathsPreset = () => {
@@ -1849,6 +2001,24 @@ export default function App() {
             </label>
 
             <div className="field">
+              <label className="field-label range-label" htmlFor="mouseSmoothing">
+                <span>Mouse smoothing</span>
+                <span>{Math.round(mouseSmoothing)}%</span>
+              </label>
+              <input
+                className="ui-range"
+                id="mouseSmoothing"
+                max="100"
+                min="0"
+                onChange={(event) => setMouseSmoothing(Number.parseInt(event.target.value, 10))}
+                step="1"
+                type="range"
+                value={mouseSmoothing}
+              />
+              <span className="field-hint">0% follows the pointer immediately. Higher values add more easing.</span>
+            </div>
+
+            <div className="field">
               <span className="field-label">Connector rendering</span>
               <div aria-label="Connector rendering" className="segmented-control" role="radiogroup">
                 <button
@@ -1958,6 +2128,24 @@ export default function App() {
             </div>
 
             <div className="field">
+              <label className="field-label range-label" htmlFor="maskPlaySpeed">
+                <span>Mask play speed</span>
+                <span>{Math.round(maskPlaySpeed)}%</span>
+              </label>
+              <input
+                className="ui-range"
+                id="maskPlaySpeed"
+                max="300"
+                min="0"
+                onChange={(event) => setMaskPlaySpeed(Number.parseInt(event.target.value, 10))}
+                step="5"
+                type="range"
+                value={maskPlaySpeed}
+              />
+              <span className="field-hint">Controls how quickly Play cycles through mask patterns.</span>
+            </div>
+
+            <div className="field">
               <label className="field-label" htmlFor="error_level">
                 Error correction
               </label>
@@ -2015,6 +2203,40 @@ export default function App() {
                 value={paddingModules}
               />
               <span className="field-hint">Adds background space around the QR in preview and exports.</span>
+            </div>
+
+            <label className="switch-row" htmlFor="syntheticPaddingData">
+              <span>
+                <span className="field-label">Synthetic padding data</span>
+                <span className="field-hint">Fills the padding with pseudo-random modules seeded by the mask pattern.</span>
+              </span>
+              <input
+                checked={syntheticPaddingData}
+                className="switch-input"
+                id="syntheticPaddingData"
+                onChange={(event) => setSyntheticPaddingData(event.target.checked)}
+                type="checkbox"
+              />
+            </label>
+
+            <div className="field">
+              <label className="field-label range-label" htmlFor="syntheticPaddingFieldCompliance">
+                <span>Padding field compliance</span>
+                <span>{Math.round(syntheticPaddingFieldCompliance)}%</span>
+              </label>
+              <input
+                className="ui-range"
+                id="syntheticPaddingFieldCompliance"
+                max="100"
+                min="0"
+                onChange={(event) => setSyntheticPaddingFieldCompliance(Number.parseInt(event.target.value, 10))}
+                step="1"
+                type="range"
+                value={syntheticPaddingFieldCompliance}
+              />
+              <span className="field-hint">
+                Blends random padding with bands aligned to the active angle field.
+              </span>
             </div>
               </div>
             ) : null}
