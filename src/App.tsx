@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import qrcode from "./qr";
 
 type ErrorLevel = "L" | "M" | "Q" | "H";
 type DotShrinkage = 2 | 3;
 type ConnectorStyle = "dots" | "paths";
+type BackgroundSource = "color" | "uploaded" | "field";
+type QRMaskPattern = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 type StrokeCap = "square" | "round";
 type JoinAlgorithm =
   | "none"
@@ -34,6 +36,10 @@ type DotEdge = {
   from: DotCell;
   to: DotCell;
 };
+type Point = {
+  x: number;
+  y: number;
+};
 type RenderRect = {
   kind: "rect";
   fill: string;
@@ -49,7 +55,15 @@ type RenderPath = {
   strokeLinecap: StrokeCap;
   strokeWidth: number;
 };
-type RenderShape = RenderRect | RenderPath;
+type RenderImage = {
+  height: number;
+  href: string;
+  kind: "image";
+  width: number;
+  x: number;
+  y: number;
+};
+type RenderShape = RenderImage | RenderRect | RenderPath;
 type RenderResult = {
   shapes: RenderShape[];
   width: number;
@@ -57,7 +71,7 @@ type RenderResult = {
 
 type QRCode = {
   addData(data: string): void;
-  make(onlyControl?: boolean): void;
+  make(onlyControl?: boolean, maskPattern?: QRMaskPattern): void;
   returnByteArray(): QRMatrix;
 };
 
@@ -89,6 +103,8 @@ const angleFields: AngleField[] = [
   "pinwheel",
 ];
 const connectorStyles: ConnectorStyle[] = ["dots", "paths"];
+const backgroundSources: BackgroundSource[] = ["color", "uploaded", "field"];
+const qrMaskPatterns: QRMaskPattern[] = [0, 1, 2, 3, 4, 5, 6, 7];
 const strokeCaps: StrokeCap[] = ["square", "round"];
 
 function isOneOf<T extends string | number>(values: T[], value: unknown): value is T {
@@ -107,8 +123,16 @@ function parseFillColor(value: unknown, fallback: string): string {
   return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
 }
 
+function parseImageDataUrl(value: unknown, fallback: string): string {
+  return typeof value === "string" && (value === "" || /^data:image\//.test(value)) ? value : fallback;
+}
+
 function parseQrSize(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 10 ? value : fallback;
+}
+
+function parsePercentage(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100 ? value : fallback;
 }
 
 function parseOption<T extends string | number>(values: T[], value: unknown, fallback: T): T {
@@ -133,7 +157,11 @@ function useStoredState<T>(key: string, fallback: T, parse: (value: unknown, fal
   const [value, setValue] = useState(() => readStoredState(key, fallback, parse));
 
   useEffect(() => {
-    window.localStorage.setItem(`${storagePrefix}:${key}`, JSON.stringify(value));
+    try {
+      window.localStorage.setItem(`${storagePrefix}:${key}`, JSON.stringify(value));
+    } catch (error) {
+      console.warn(`Could not persist ${key}.`, error);
+    }
   }, [key, value]);
 
   return [value, setValue] as const;
@@ -149,18 +177,76 @@ function get2d(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
   return context;
 }
 
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Could not load background image."));
+    image.src = src;
+  });
+}
+
+function drawCoverImage(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) {
+  const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+  const sourceWidth = width / scale;
+  const sourceHeight = height / scale;
+  const sourceX = (image.naturalWidth - sourceWidth) / 2;
+  const sourceY = (image.naturalHeight - sourceHeight) / 2;
+
+  ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
+}
+
+function createGeneratedFieldBackground(angleField: AngleField): string {
+  const size = 720;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+
+  const ctx = get2d(canvas);
+  const image = ctx.createImageData(size, size);
+  const data = image.data;
+  const pink = [255, 62, 181];
+  const blue = [20, 156, 255];
+
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const fieldVector = getFieldVector(angleField, x, y, size);
+      const fieldLength = Math.hypot(fieldVector.x, fieldVector.y) || 1;
+      const normalX = -fieldVector.y / fieldLength;
+      const normalY = fieldVector.x / fieldLength;
+      const stripe = Math.sin((x * normalX + y * normalY) * 0.075) >= 0 ? pink : blue;
+      const index = (y * size + x) * 4;
+
+      data[index] = stripe[0];
+      data[index + 1] = stripe[1];
+      data[index + 2] = stripe[2];
+      data[index + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(image, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
 function createQr(size: number, errorLevel: ErrorLevel, text: string): QRCode {
   const qr = qrcode(size, errorLevel) as QRCode;
   qr.addData(text);
   return qr;
 }
 
-function createQrMatrices(size: number, errorLevel: ErrorLevel, text: string) {
+function createQrMatrices(size: number, errorLevel: ErrorLevel, text: string, maskPattern: QRMaskPattern) {
   const qr = createQr(size, errorLevel, text);
-  qr.make();
+  qr.make(false, maskPattern);
 
   const controls = createQr(size, errorLevel, text);
-  controls.make(true);
+  controls.make(true, maskPattern);
 
   return {
     controlBytes: controls.returnByteArray(),
@@ -524,20 +610,147 @@ function createJoinEdges(
   }
 }
 
+function getDotCenter(dot: DotCell): Point {
+  return {
+    x: dot.byteRow * blockSize + blockSize / 2,
+    y: dot.byteCell * blockSize + blockSize / 2,
+  };
+}
+
+function createEdgeChains(edges: DotEdge[]): DotCell[][] {
+  const adjacency = new Map<string, Array<{ edgeIndex: number; other: DotCell }>>();
+  const dotByKey = new Map<string, DotCell>();
+  const usedEdges = new Set<number>();
+
+  const addNeighbor = (dot: DotCell, other: DotCell, edgeIndex: number) => {
+    const key = dotKey(dot);
+    dotByKey.set(key, dot);
+    dotByKey.set(dotKey(other), other);
+
+    const neighbors = adjacency.get(key) ?? [];
+    neighbors.push({ edgeIndex, other });
+    adjacency.set(key, neighbors);
+  };
+
+  edges.forEach((edge, edgeIndex) => {
+    addNeighbor(edge.from, edge.to, edgeIndex);
+    addNeighbor(edge.to, edge.from, edgeIndex);
+  });
+
+  for (const neighbors of adjacency.values()) {
+    neighbors.sort((first, second) => edgeWeight(edges[first.edgeIndex]) - edgeWeight(edges[second.edgeIndex]));
+  }
+
+  const startKeys = [...adjacency.entries()]
+    .sort(([firstKey], [secondKey]) => firstKey.localeCompare(secondKey))
+    .sort(([, firstNeighbors], [, secondNeighbors]) => firstNeighbors.length - secondNeighbors.length)
+    .map(([key]) => key);
+  const chains: DotCell[][] = [];
+
+  for (const startKey of startKeys) {
+    let neighbors = adjacency.get(startKey) ?? [];
+
+    while (neighbors.some((neighbor) => !usedEdges.has(neighbor.edgeIndex))) {
+      const startDot = dotByKey.get(startKey);
+
+      if (!startDot) {
+        break;
+      }
+
+      const chain = [startDot];
+      let currentKey = startKey;
+
+      while (true) {
+        const nextNeighbor = (adjacency.get(currentKey) ?? []).find(
+          (neighbor) => !usedEdges.has(neighbor.edgeIndex),
+        );
+
+        if (!nextNeighbor) {
+          break;
+        }
+
+        usedEdges.add(nextNeighbor.edgeIndex);
+        chain.push(nextNeighbor.other);
+        currentKey = dotKey(nextNeighbor.other);
+      }
+
+      if (chain.length > 1) {
+        chains.push(chain);
+      }
+
+      neighbors = adjacency.get(startKey) ?? [];
+    }
+  }
+
+  return chains;
+}
+
+function createSmoothedPathD(points: Point[], smoothing: number): string {
+  if (points.length === 0) {
+    return "";
+  }
+
+  if (points.length === 1) {
+    return `M ${points[0].x} ${points[0].y}`;
+  }
+
+  if (smoothing <= 0 || points.length === 2) {
+    return points
+      .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
+      .join(" ");
+  }
+
+  const cornerRadius = blockSize * 0.5 * (smoothing / 100);
+  const commands = [`M ${points[0].x} ${points[0].y}`];
+
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const previous = points[index - 1];
+    const current = points[index];
+    const next = points[index + 1];
+    const previousDistance = Math.hypot(previous.x - current.x, previous.y - current.y);
+    const nextDistance = Math.hypot(next.x - current.x, next.y - current.y);
+    const beforeDistance = Math.min(cornerRadius, previousDistance / 2);
+    const afterDistance = Math.min(cornerRadius, nextDistance / 2);
+    const before = {
+      x: current.x + ((previous.x - current.x) / previousDistance) * beforeDistance,
+      y: current.y + ((previous.y - current.y) / previousDistance) * beforeDistance,
+    };
+    const after = {
+      x: current.x + ((next.x - current.x) / nextDistance) * afterDistance,
+      y: current.y + ((next.y - current.y) / nextDistance) * afterDistance,
+    };
+
+    commands.push(`L ${before.x} ${before.y}`);
+    commands.push(`Q ${current.x} ${current.y} ${after.x} ${after.y}`);
+  }
+
+  const last = points[points.length - 1];
+  commands.push(`L ${last.x} ${last.y}`);
+
+  return commands.join(" ");
+}
+
 function createRenderResult(
   qrBytes: QRMatrix,
   controlBytes: QRMatrix,
   dotShrinkage: DotShrinkage,
   fillColor: string,
+  backgroundImageHref: string,
   joinAlgorithm: JoinAlgorithm,
   allowDiagonalJoins: boolean,
   angleField: AngleField,
   connectorStyle: ConnectorStyle,
+  pathSmoothing: number,
   strokeCap: StrokeCap,
 ): RenderResult {
   const width = qrBytes.length * blockSize;
   const dotSize = blockSize / dotShrinkage;
   const dotOffset = (blockSize - dotSize) / 2;
+  const joinEdges = createJoinEdges(joinAlgorithm, qrBytes, controlBytes, allowDiagonalJoins, angleField);
+  const pathDotKeys =
+    connectorStyle === "paths"
+      ? new Set(joinEdges.flatMap((edge) => [dotKey(edge.from), dotKey(edge.to)]))
+      : new Set<string>();
   const shapes: RenderShape[] = [
     {
       fill: fillColor,
@@ -549,8 +762,23 @@ function createRenderResult(
     },
   ];
 
+  if (backgroundImageHref) {
+    shapes.push({
+      height: width,
+      href: backgroundImageHref,
+      kind: "image",
+      width,
+      x: 0,
+      y: 0,
+    });
+  }
+
   for (let byteRow = 0; byteRow < qrBytes.length; byteRow += 1) {
     for (let byteCell = 0; byteCell < qrBytes[byteRow].length; byteCell += 1) {
+      if (pathDotKeys.has(dotKey({ byteCell, byteRow })) && isDataCell(controlBytes, byteRow, byteCell)) {
+        continue;
+      }
+
       shapes.push({
         fill: qrBytes[byteRow][byteCell] ? "black" : "white",
         height: dotSize,
@@ -562,23 +790,22 @@ function createRenderResult(
     }
   }
 
-  for (const edge of createJoinEdges(joinAlgorithm, qrBytes, controlBytes, allowDiagonalJoins, angleField)) {
-    const color = qrBytes[edge.from.byteRow][edge.from.byteCell] ? "black" : "white";
-
-    if (connectorStyle === "paths") {
-      const startX = edge.from.byteRow * blockSize + blockSize / 2;
-      const startY = edge.from.byteCell * blockSize + blockSize / 2;
-      const endX = edge.to.byteRow * blockSize + blockSize / 2;
-      const endY = edge.to.byteCell * blockSize + blockSize / 2;
+  if (connectorStyle === "paths") {
+    for (const chain of createEdgeChains(joinEdges)) {
+      const color = qrBytes[chain[0].byteRow][chain[0].byteCell] ? "black" : "white";
 
       shapes.push({
-        d: `M ${startX} ${startY} L ${endX} ${endY}`,
+        d: createSmoothedPathD(chain.map(getDotCenter), pathSmoothing),
         kind: "path",
         stroke: color,
         strokeLinecap: strokeCap,
         strokeWidth: dotSize,
       });
-    } else {
+    }
+  } else {
+    for (const edge of joinEdges) {
+      const color = qrBytes[edge.from.byteRow][edge.from.byteCell] ? "black" : "white";
+
       for (let connector = 1; connector < dotShrinkage; connector += 1) {
         const rowDirection = Math.sign(edge.to.byteRow - edge.from.byteRow);
         const cellDirection = Math.sign(edge.to.byteCell - edge.from.byteCell);
@@ -615,7 +842,11 @@ function createRenderResult(
   return { shapes, width };
 }
 
-function drawRenderResult(canvas: HTMLCanvasElement, renderResult: RenderResult) {
+function drawRenderResult(
+  canvas: HTMLCanvasElement,
+  renderResult: RenderResult,
+  backgroundImage: HTMLImageElement | null,
+) {
   canvas.width = renderResult.width;
   canvas.height = renderResult.width;
 
@@ -626,6 +857,10 @@ function drawRenderResult(canvas: HTMLCanvasElement, renderResult: RenderResult)
     if (shape.kind === "rect") {
       ctx.fillStyle = shape.fill;
       ctx.fillRect(shape.x, shape.y, shape.width, shape.height);
+    } else if (shape.kind === "image") {
+      if (backgroundImage) {
+        drawCoverImage(ctx, backgroundImage, shape.x, shape.y, shape.width, shape.height);
+      }
     } else {
       const path = new Path2D(shape.d);
       ctx.lineCap = shape.strokeLinecap;
@@ -636,11 +871,19 @@ function drawRenderResult(canvas: HTMLCanvasElement, renderResult: RenderResult)
   }
 }
 
+function escapeAttribute(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+}
+
 function createSvgHref(renderResult: RenderResult): string {
   const shapes = renderResult.shapes
     .map((shape) => {
       if (shape.kind === "rect") {
         return `<rect x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}" fill="${shape.fill}" />`;
+      }
+
+      if (shape.kind === "image") {
+        return `<image x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}" href="${escapeAttribute(shape.href)}" preserveAspectRatio="xMidYMid slice" />`;
       }
 
       return `<path d="${shape.d}" fill="none" stroke="${shape.stroke}" stroke-width="${shape.strokeWidth}" stroke-linecap="${shape.strokeLinecap}" />`;
@@ -659,6 +902,16 @@ export default function App() {
   );
   const [userSize, setUserSize] = useStoredState("userSize", 0, parseQrSize);
   const [fillColor, setFillColor] = useStoredState("fillColor", "#7fb8d8", parseFillColor);
+  const [backgroundSource, setBackgroundSource] = useStoredState<BackgroundSource>(
+    "backgroundSource",
+    "color",
+    (value, fallback) => parseOption(backgroundSources, value, fallback),
+  );
+  const [backgroundImageHref, setBackgroundImageHref] = useStoredState(
+    "backgroundImageHref",
+    "",
+    parseImageDataUrl,
+  );
   const [dotShrinkage, setDotShrinkage] = useStoredState<DotShrinkage>("dotShrinkage", 3, (value, fallback) =>
     parseOption(dotShrinkages, value, fallback),
   );
@@ -680,13 +933,27 @@ export default function App() {
     "paths",
     (value, fallback) => parseOption(connectorStyles, value, fallback),
   );
+  const [pathSmoothing, setPathSmoothing] = useStoredState("pathSmoothing", 0, parsePercentage);
+  const [maskPattern, setMaskPattern] = useStoredState<QRMaskPattern>("maskPattern", 0, (value, fallback) =>
+    parseOption(qrMaskPatterns, value, fallback),
+  );
   const [strokeCap, setStrokeCap] = useStoredState<StrokeCap>("strokeCap", "square", (value, fallback) =>
     parseOption(strokeCaps, value, fallback),
   );
+  const [isPlayingMasks, setIsPlayingMasks] = useState(false);
+  const [generatedBackgroundHref, setGeneratedBackgroundHref] = useState("");
   const [pngHref, setPngHref] = useState("about:blank");
   const [svgHref, setSvgHref] = useState("about:blank");
+  const effectiveBackgroundImageHref =
+    backgroundSource === "uploaded"
+      ? backgroundImageHref
+      : backgroundSource === "field"
+        ? generatedBackgroundHref
+        : "";
 
   const outputRef = useRef<HTMLCanvasElement | null>(null);
+  const backgroundImageRef = useRef<HTMLImageElement | null>(null);
+  const [backgroundImageVersion, setBackgroundImageVersion] = useState(0);
 
   const halftoneQR = useCallback(
     (qrBytes: QRMatrix, controlBytes: QRMatrix) => {
@@ -701,24 +968,36 @@ export default function App() {
         controlBytes,
         dotShrinkage,
         fillColor,
+        effectiveBackgroundImageHref,
         joinAlgorithm,
         allowDiagonalJoins,
         angleField,
         connectorStyle,
+        pathSmoothing,
         strokeCap,
       );
-      drawRenderResult(canvas, renderResult);
+      drawRenderResult(canvas, renderResult, backgroundImageRef.current);
       setPngHref(canvas.toDataURL("image/png"));
       setSvgHref(createSvgHref(renderResult));
     },
-    [allowDiagonalJoins, angleField, connectorStyle, dotShrinkage, fillColor, joinAlgorithm, strokeCap],
+    [
+      allowDiagonalJoins,
+      angleField,
+      connectorStyle,
+      dotShrinkage,
+      effectiveBackgroundImageHref,
+      fillColor,
+      joinAlgorithm,
+      pathSmoothing,
+      strokeCap,
+    ],
   );
 
   const regen = useCallback(() => {
     if (userSize === 0) {
       for (let qrSize = 1; qrSize <= 10; qrSize += 1) {
         try {
-          const { qrBytes, controlBytes } = createQrMatrices(qrSize, errorLevel, debouncedText);
+          const { qrBytes, controlBytes } = createQrMatrices(qrSize, errorLevel, debouncedText, maskPattern);
           halftoneQR(qrBytes, controlBytes);
           return;
         } catch {
@@ -731,12 +1010,12 @@ export default function App() {
     }
 
     try {
-      const { qrBytes, controlBytes } = createQrMatrices(userSize, errorLevel, debouncedText);
+      const { qrBytes, controlBytes } = createQrMatrices(userSize, errorLevel, debouncedText, maskPattern);
       halftoneQR(qrBytes, controlBytes);
     } catch (error) {
       alert(error);
     }
-  }, [debouncedText, errorLevel, halftoneQR, userSize]);
+  }, [backgroundImageVersion, debouncedText, errorLevel, halftoneQR, maskPattern, userSize]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -749,6 +1028,72 @@ export default function App() {
   useEffect(() => {
     regen();
   }, [regen]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!effectiveBackgroundImageHref) {
+      backgroundImageRef.current = null;
+      setBackgroundImageVersion((version) => version + 1);
+      return;
+    }
+
+    loadImage(effectiveBackgroundImageHref)
+      .then((image) => {
+        if (!cancelled) {
+          backgroundImageRef.current = image;
+          setBackgroundImageVersion((version) => version + 1);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          backgroundImageRef.current = null;
+          console.error(error);
+          setBackgroundImageVersion((version) => version + 1);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveBackgroundImageHref]);
+
+  useEffect(() => {
+    if (backgroundSource !== "field") {
+      return;
+    }
+
+    setGeneratedBackgroundHref(createGeneratedFieldBackground(angleField));
+  }, [angleField, backgroundSource]);
+
+  useEffect(() => {
+    if (!isPlayingMasks) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setMaskPattern((current) => (((current + 1) % qrMaskPatterns.length) as QRMaskPattern));
+    }, 100);
+
+    return () => window.clearInterval(interval);
+  }, [isPlayingMasks, setMaskPattern]);
+
+  const handleBackgroundImageUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setBackgroundImageHref(reader.result);
+        setBackgroundSource("uploaded");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   return (
     <div className="app-shell">
@@ -789,6 +1134,57 @@ export default function App() {
                 />
                 <span className="color-value">{fillColor}</span>
               </div>
+            </div>
+
+            <div className="field">
+              <label className="field-label" htmlFor="backgroundSource">
+                Background source
+              </label>
+              <select
+                className="ui-select"
+                id="backgroundSource"
+                onChange={(event) => setBackgroundSource(event.target.value as BackgroundSource)}
+                value={backgroundSource}
+              >
+                <option value="color">Color only</option>
+                <option value="uploaded">Uploaded image</option>
+                <option value="field">Generated angle field</option>
+              </select>
+            </div>
+
+            <div className="field">
+              <label className="field-label" htmlFor="backgroundImage">
+                Background image
+              </label>
+              <div className="file-row">
+                <input
+                  accept="image/*"
+                  className="ui-file"
+                  id="backgroundImage"
+                  onChange={handleBackgroundImageUpload}
+                  type="file"
+                />
+                <button
+                  className="ui-button secondary"
+                  disabled={!backgroundImageHref}
+                  onClick={() => {
+                    setBackgroundImageHref("");
+                    if (backgroundSource === "uploaded") {
+                      setBackgroundSource("color");
+                    }
+                  }}
+                  type="button"
+                >
+                  Clear
+                </button>
+              </div>
+              <span className="field-hint">
+                {backgroundSource === "field"
+                  ? "Generated from the active angle field and embedded into exports."
+                  : backgroundImageHref
+                  ? "Image is embedded into SVG and drawn behind the QR."
+                  : "Optional. The color remains the fallback behind the image."}
+              </span>
             </div>
           </section>
 
@@ -910,6 +1306,24 @@ export default function App() {
               <span className="field-hint">Applies when connector rendering is set to SVG paths.</span>
             </div>
 
+            <div className="field">
+              <label className="field-label range-label" htmlFor="pathSmoothing">
+                <span>Path smoothing</span>
+                <span>{Math.round(pathSmoothing)}%</span>
+              </label>
+              <input
+                className="ui-range"
+                id="pathSmoothing"
+                max="100"
+                min="0"
+                onChange={(event) => setPathSmoothing(Number.parseInt(event.target.value, 10))}
+                step="1"
+                type="range"
+                value={pathSmoothing}
+              />
+              <span className="field-hint">Rounds corners in SVG path mode. Higher values bend paths farther from the QR grid.</span>
+            </div>
+
             <label className="switch-row" htmlFor="allowDiagonalJoins">
               <span>
                 <span className="field-label">Allow diagonal joins</span>
@@ -926,6 +1340,34 @@ export default function App() {
           </section>
 
           <section className="settings-section">
+            <div className="field">
+              <label className="field-label" htmlFor="maskPattern">
+                QR mask pattern
+              </label>
+              <div className="mask-row">
+                <select
+                  className="ui-select"
+                  id="maskPattern"
+                  onChange={(event) => setMaskPattern(Number.parseInt(event.target.value, 10) as QRMaskPattern)}
+                  value={maskPattern}
+                >
+                  {qrMaskPatterns.map((pattern) => (
+                    <option key={pattern} value={pattern}>
+                      Mask {pattern}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  aria-pressed={isPlayingMasks}
+                  className="ui-button secondary"
+                  onClick={() => setIsPlayingMasks((playing) => !playing)}
+                  type="button"
+                >
+                  {isPlayingMasks ? "Pause" : "Play"}
+                </button>
+              </div>
+            </div>
+
             <div className="field">
               <label className="field-label" htmlFor="error_level">
                 Error correction

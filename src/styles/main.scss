@@ -138,6 +138,12 @@ h2 {
   margin-top: 6px;
 }
 
+.range-label {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
 .ui-input,
 .ui-select {
   background: var(--input);
@@ -211,6 +217,54 @@ h2 {
   height: 42px;
   line-height: 40px;
   padding: 0 12px;
+}
+
+.file-row {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 88px;
+}
+
+.ui-file {
+  background: var(--input);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--muted-strong);
+  cursor: pointer;
+  height: 42px;
+  min-width: 0;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+.ui-file::file-selector-button {
+  background: var(--panel-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  margin-right: 10px;
+  padding: 4px 8px;
+}
+
+.mask-row {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 88px;
+}
+
+.ui-range {
+  accent-color: var(--accent);
+  cursor: pointer;
+  height: 28px;
+  width: 100%;
+}
+
+.ui-range:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .segmented-control {
@@ -342,6 +396,12 @@ h2 {
 
 .ui-button:hover {
   transform: translateY(-1px);
+}
+
+.ui-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
 }
 
 .preview-stage {

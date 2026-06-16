@@ -404,8 +404,8 @@ var qrcode = function() {
 			return _moduleCount;
 		};
 
-		_this.make = function(onlyControl) {
-			makeImpl(false, getBestMaskPattern(), onlyControl);
+		_this.make = function(onlyControl, maskPattern) {
+			makeImpl(false, typeof maskPattern == 'number' ? maskPattern : getBestMaskPattern(), onlyControl);
 		};
 
 		_this.createTableTag = function(cellSize, margin) {
