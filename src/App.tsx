@@ -1,4 +1,4 @@
-import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type ChangeEvent, type PointerEvent, useCallback, useEffect, useRef, useState } from "react";
 import qrcode from "./qr";
 
 type ErrorLevel = "L" | "M" | "Q" | "H";
@@ -39,6 +39,10 @@ type DotEdge = {
 type Point = {
   x: number;
   y: number;
+};
+type FieldContext = {
+  mouse: Point | null;
+  phase: number;
 };
 type RenderRect = {
   kind: "rect";
@@ -106,6 +110,10 @@ const connectorStyles: ConnectorStyle[] = ["dots", "paths"];
 const backgroundSources: BackgroundSource[] = ["color", "uploaded", "field"];
 const qrMaskPatterns: QRMaskPattern[] = [0, 1, 2, 3, 4, 5, 6, 7];
 const strokeCaps: StrokeCap[] = ["square", "round"];
+const defaultFieldContext: FieldContext = {
+  mouse: null,
+  phase: 0,
+};
 
 function isOneOf<T extends string | number>(values: T[], value: unknown): value is T {
   return values.includes(value as T);
@@ -133,6 +141,10 @@ function parseQrSize(value: unknown, fallback: number): number {
 
 function parsePercentage(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100 ? value : fallback;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function parseOption<T extends string | number>(values: T[], value: unknown, fallback: T): T {
@@ -203,8 +215,8 @@ function drawCoverImage(
   ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
 }
 
-function createGeneratedFieldBackground(angleField: AngleField): string {
-  const size = 720;
+function createGeneratedFieldBackground(angleField: AngleField, fieldContext: FieldContext): string {
+  const size = 480;
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
@@ -217,11 +229,11 @@ function createGeneratedFieldBackground(angleField: AngleField): string {
 
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
-      const fieldVector = getFieldVector(angleField, x, y, size);
+      const fieldVector = getFieldVector(angleField, x, y, size, fieldContext);
       const fieldLength = Math.hypot(fieldVector.x, fieldVector.y) || 1;
       const normalX = -fieldVector.y / fieldLength;
       const normalY = fieldVector.x / fieldLength;
-      const stripe = Math.sin((x * normalX + y * normalY) * 0.075) >= 0 ? pink : blue;
+      const stripe = Math.sin((x * normalX + y * normalY) * 0.08 + fieldContext.phase * 1.8) >= 0 ? pink : blue;
       const index = (y * size + x) * 4;
 
       data[index] = stripe[0];
@@ -461,40 +473,101 @@ function edgeWeight(edge: DotEdge): number {
   return (first ^ second) >>> 0;
 }
 
-function getFieldVector(field: AngleField, x: number, y: number, size: number) {
-  const center = (size - 1) / 2;
-  const dx = x - center;
-  const dy = y - center;
+function rotateVector(vector: Point, angle: number): Point {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+
+  return {
+    x: vector.x * cos - vector.y * sin,
+    y: vector.x * sin + vector.y * cos,
+  };
+}
+
+function applyFieldDynamics(vector: Point, x: number, y: number, size: number, fieldContext: FieldContext): Point {
+  const phaseTurn = fieldContext.phase * 0.16;
+
+  if (!fieldContext.mouse) {
+    return rotateVector(vector, phaseTurn);
+  }
+
+  const normalizedX = x / Math.max(1, size - 1);
+  const normalizedY = y / Math.max(1, size - 1);
+  const mouseDx = normalizedX - fieldContext.mouse.x;
+  const mouseDy = normalizedY - fieldContext.mouse.y;
+  const mouseDistance = Math.hypot(mouseDx, mouseDy);
+  const mouseAngle = Math.atan2(mouseDy, mouseDx);
+  const ripple = Math.sin(mouseDistance * Math.PI * 7 - fieldContext.phase * 2.4);
+  const falloff = Math.max(0, 1 - mouseDistance * 1.6);
+
+  return rotateVector(vector, phaseTurn + ripple * falloff * 0.95 + mouseAngle * falloff * 0.12);
+}
+
+function getFieldVector(
+  field: AngleField,
+  x: number,
+  y: number,
+  size: number,
+  fieldContext = defaultFieldContext,
+) {
+  const baseCenter = (size - 1) / 2;
+  const mouseCenterX = fieldContext.mouse ? fieldContext.mouse.x * (size - 1) : baseCenter;
+  const mouseCenterY = fieldContext.mouse ? fieldContext.mouse.y * (size - 1) : baseCenter;
+  const centerX = baseCenter + (mouseCenterX - baseCenter) * 0.9;
+  const centerY = baseCenter + (mouseCenterY - baseCenter) * 0.9;
+  const dx = x - centerX;
+  const dy = y - centerY;
   const distance = Math.hypot(dx, dy) || 1;
+  const phase = fieldContext.phase;
 
   switch (field) {
     case "horizontal":
-      return { x: 1, y: 0 };
+      return applyFieldDynamics({ x: 1, y: 0 }, x, y, size, fieldContext);
     case "vertical":
-      return { x: 0, y: 1 };
+      return applyFieldDynamics({ x: 0, y: 1 }, x, y, size, fieldContext);
     case "diagonalDown":
-      return { x: 1, y: 1 };
+      return applyFieldDynamics({ x: 1, y: 1 }, x, y, size, fieldContext);
     case "diagonalUp":
-      return { x: 1, y: -1 };
+      return applyFieldDynamics({ x: 1, y: -1 }, x, y, size, fieldContext);
     case "radial":
-      return { x: dx / distance, y: dy / distance };
+      return applyFieldDynamics({ x: dx / distance, y: dy / distance }, x, y, size, fieldContext);
     case "rings":
-      return { x: -dy / distance, y: dx / distance };
+      return applyFieldDynamics({ x: -dy / distance, y: dx / distance }, x, y, size, fieldContext);
     case "spiral":
-      return { x: dx / distance - dy / distance, y: dy / distance + dx / distance };
+      return applyFieldDynamics(
+        {
+          x: Math.cos(phase * 0.45) * (dx / distance) - Math.sin(phase * 0.45) * (dy / distance),
+          y: Math.cos(phase * 0.45) * (dy / distance) + Math.sin(phase * 0.45) * (dx / distance),
+        },
+        x,
+        y,
+        size,
+        fieldContext,
+      );
     case "wavy":
-      return { x: 1, y: Math.sin((y / Math.max(1, size - 1)) * Math.PI * 4) };
+      return applyFieldDynamics(
+        { x: 1, y: Math.sin((y / Math.max(1, size - 1)) * Math.PI * 4 + phase * 1.3) },
+        x,
+        y,
+        size,
+        fieldContext,
+      );
     case "pinwheel":
-      return {
-        x: Math.cos(Math.atan2(dy, dx) * 3),
-        y: Math.sin(Math.atan2(dy, dx) * 3),
-      };
+      return applyFieldDynamics(
+        {
+          x: Math.cos(Math.atan2(dy, dx) * 3 + phase),
+          y: Math.sin(Math.atan2(dy, dx) * 3 + phase),
+        },
+        x,
+        y,
+        size,
+        fieldContext,
+      );
     case "none":
-      return { x: 1, y: 0 };
+      return applyFieldDynamics({ x: 1, y: 0 }, x, y, size, fieldContext);
   }
 }
 
-function getFieldAlignment(edge: DotEdge, field: AngleField, size: number): number {
+function getFieldAlignment(edge: DotEdge, field: AngleField, size: number, fieldContext: FieldContext): number {
   if (field === "none") {
     return 0;
   }
@@ -503,7 +576,7 @@ function getFieldAlignment(edge: DotEdge, field: AngleField, size: number): numb
   const edgeY = edge.to.byteCell - edge.from.byteCell;
   const midpointX = (edge.from.byteRow + edge.to.byteRow) / 2;
   const midpointY = (edge.from.byteCell + edge.to.byteCell) / 2;
-  const fieldVector = getFieldVector(field, midpointX, midpointY, size);
+  const fieldVector = getFieldVector(field, midpointX, midpointY, size, fieldContext);
   const edgeLength = Math.hypot(edgeX, edgeY) || 1;
   const fieldLength = Math.hypot(fieldVector.x, fieldVector.y) || 1;
 
@@ -570,10 +643,12 @@ function createFieldSnakeEdges(
   controlBytes: QRMatrix,
   allowDiagonalJoins: boolean,
   angleField: AngleField,
+  fieldContext: FieldContext,
 ): DotEdge[] {
   const edges = createAllMatchingNeighborEdges(qrBytes, controlBytes, allowDiagonalJoins).sort((first, second) => {
     const alignmentDifference =
-      getFieldAlignment(second, angleField, qrBytes.length) - getFieldAlignment(first, angleField, qrBytes.length);
+      getFieldAlignment(second, angleField, qrBytes.length, fieldContext) -
+      getFieldAlignment(first, angleField, qrBytes.length, fieldContext);
 
     if (Math.abs(alignmentDifference) > 0.0001) {
       return alignmentDifference;
@@ -591,6 +666,7 @@ function createJoinEdges(
   controlBytes: QRMatrix,
   allowDiagonalJoins: boolean,
   angleField: AngleField,
+  fieldContext: FieldContext,
 ): DotEdge[] {
   switch (algorithm) {
     case "all":
@@ -604,7 +680,7 @@ function createJoinEdges(
     case "mazeSnake":
       return createMazeSnakeEdges(qrBytes, controlBytes, allowDiagonalJoins);
     case "fieldSnake":
-      return createFieldSnakeEdges(qrBytes, controlBytes, allowDiagonalJoins, angleField);
+      return createFieldSnakeEdges(qrBytes, controlBytes, allowDiagonalJoins, angleField, fieldContext);
     case "none":
       return [];
   }
@@ -739,6 +815,7 @@ function createRenderResult(
   joinAlgorithm: JoinAlgorithm,
   allowDiagonalJoins: boolean,
   angleField: AngleField,
+  fieldContext: FieldContext,
   connectorStyle: ConnectorStyle,
   pathSmoothing: number,
   strokeCap: StrokeCap,
@@ -746,7 +823,14 @@ function createRenderResult(
   const width = qrBytes.length * blockSize;
   const dotSize = blockSize / dotShrinkage;
   const dotOffset = (blockSize - dotSize) / 2;
-  const joinEdges = createJoinEdges(joinAlgorithm, qrBytes, controlBytes, allowDiagonalJoins, angleField);
+  const joinEdges = createJoinEdges(
+    joinAlgorithm,
+    qrBytes,
+    controlBytes,
+    allowDiagonalJoins,
+    angleField,
+    fieldContext,
+  );
   const pathDotKeys =
     connectorStyle === "paths"
       ? new Set(joinEdges.flatMap((edge) => [dotKey(edge.from), dotKey(edge.to)]))
@@ -900,11 +984,11 @@ export default function App() {
   const [errorLevel, setErrorLevel] = useStoredState<ErrorLevel>("errorLevel", "H", (value, fallback) =>
     parseOption(errorLevels, value, fallback),
   );
-  const [userSize, setUserSize] = useStoredState("userSize", 0, parseQrSize);
+  const [userSize, setUserSize] = useStoredState("userSize", 6, parseQrSize);
   const [fillColor, setFillColor] = useStoredState("fillColor", "#7fb8d8", parseFillColor);
   const [backgroundSource, setBackgroundSource] = useStoredState<BackgroundSource>(
     "backgroundSource",
-    "color",
+    "field",
     (value, fallback) => parseOption(backgroundSources, value, fallback),
   );
   const [backgroundImageHref, setBackgroundImageHref] = useStoredState(
@@ -912,7 +996,7 @@ export default function App() {
     "",
     parseImageDataUrl,
   );
-  const [dotShrinkage, setDotShrinkage] = useStoredState<DotShrinkage>("dotShrinkage", 3, (value, fallback) =>
+  const [dotShrinkage, setDotShrinkage] = useStoredState<DotShrinkage>("dotShrinkage", 2, (value, fallback) =>
     parseOption(dotShrinkages, value, fallback),
   );
   const [joinAlgorithm, setJoinAlgorithm] = useStoredState<JoinAlgorithm>(
@@ -930,7 +1014,7 @@ export default function App() {
   );
   const [connectorStyle, setConnectorStyle] = useStoredState<ConnectorStyle>(
     "connectorStyle",
-    "paths",
+    "dots",
     (value, fallback) => parseOption(connectorStyles, value, fallback),
   );
   const [pathSmoothing, setPathSmoothing] = useStoredState("pathSmoothing", 0, parsePercentage);
@@ -940,10 +1024,26 @@ export default function App() {
   const [strokeCap, setStrokeCap] = useStoredState<StrokeCap>("strokeCap", "square", (value, fallback) =>
     parseOption(strokeCaps, value, fallback),
   );
+  const [evolveAngleField, setEvolveAngleField] = useStoredState(
+    "evolveAngleField",
+    true,
+    parseBoolean,
+  );
+  const [mouseModulation, setMouseModulation] = useStoredState(
+    "mouseModulation",
+    true,
+    parseBoolean,
+  );
   const [isPlayingMasks, setIsPlayingMasks] = useState(false);
   const [generatedBackgroundHref, setGeneratedBackgroundHref] = useState("");
+  const [fieldPhase, setFieldPhase] = useState(0);
+  const [fieldMouse, setFieldMouse] = useState<Point | null>(null);
   const [pngHref, setPngHref] = useState("about:blank");
   const [svgHref, setSvgHref] = useState("about:blank");
+  const fieldContext: FieldContext = {
+    mouse: mouseModulation ? fieldMouse : null,
+    phase: fieldPhase,
+  };
   const effectiveBackgroundImageHref =
     backgroundSource === "uploaded"
       ? backgroundImageHref
@@ -972,6 +1072,7 @@ export default function App() {
         joinAlgorithm,
         allowDiagonalJoins,
         angleField,
+        fieldContext,
         connectorStyle,
         pathSmoothing,
         strokeCap,
@@ -986,36 +1087,38 @@ export default function App() {
       connectorStyle,
       dotShrinkage,
       effectiveBackgroundImageHref,
+      fieldMouse,
+      fieldPhase,
       fillColor,
       joinAlgorithm,
+      mouseModulation,
       pathSmoothing,
       strokeCap,
     ],
   );
 
   const regen = useCallback(() => {
-    if (userSize === 0) {
-      for (let qrSize = 1; qrSize <= 10; qrSize += 1) {
-        try {
-          const { qrBytes, controlBytes } = createQrMatrices(qrSize, errorLevel, debouncedText, maskPattern);
-          halftoneQR(qrBytes, controlBytes);
-          return;
-        } catch {
-          // Try the next QR type. The encoder validates real bit capacity.
+    const firstSize = userSize === 0 ? 1 : userSize;
+    let lastError: unknown = null;
+
+    for (let qrSize = firstSize; qrSize <= 10; qrSize += 1) {
+      try {
+        const { qrBytes, controlBytes } = createQrMatrices(qrSize, errorLevel, debouncedText, maskPattern);
+        halftoneQR(qrBytes, controlBytes);
+
+        if (userSize !== 0 && userSize !== qrSize) {
+          setUserSize(qrSize);
         }
+
+        return;
+      } catch (error) {
+        lastError = error;
+        // Try the next QR type. The encoder validates real bit capacity.
       }
-
-      alert("Too much text. Try decreasing the error level.");
-      return;
     }
 
-    try {
-      const { qrBytes, controlBytes } = createQrMatrices(userSize, errorLevel, debouncedText, maskPattern);
-      halftoneQR(qrBytes, controlBytes);
-    } catch (error) {
-      alert(error);
-    }
-  }, [backgroundImageVersion, debouncedText, errorLevel, halftoneQR, maskPattern, userSize]);
+    console.warn("Could not fit data in QR versions 1-10.", lastError);
+  }, [backgroundImageVersion, debouncedText, errorLevel, halftoneQR, maskPattern, setUserSize, userSize]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -1063,8 +1166,20 @@ export default function App() {
       return;
     }
 
-    setGeneratedBackgroundHref(createGeneratedFieldBackground(angleField));
-  }, [angleField, backgroundSource]);
+    setGeneratedBackgroundHref(createGeneratedFieldBackground(angleField, fieldContext));
+  }, [angleField, backgroundSource, fieldMouse, fieldPhase, mouseModulation]);
+
+  useEffect(() => {
+    if (!evolveAngleField) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setFieldPhase((phase) => (phase + 0.2) % (Math.PI * 2));
+    }, 80);
+
+    return () => window.clearInterval(interval);
+  }, [evolveAngleField]);
 
   useEffect(() => {
     if (!isPlayingMasks) {
@@ -1094,6 +1209,25 @@ export default function App() {
     };
     reader.readAsDataURL(file);
   };
+
+  const handlePreviewPointerMove = useCallback(
+    (event: PointerEvent<HTMLCanvasElement>) => {
+      if (!mouseModulation) {
+        return;
+      }
+
+      const bounds = event.currentTarget.getBoundingClientRect();
+      setFieldMouse({
+        x: clamp((event.clientX - bounds.left) / bounds.width, 0, 1),
+        y: clamp((event.clientY - bounds.top) / bounds.height, 0, 1),
+      });
+    },
+    [mouseModulation],
+  );
+
+  const handlePreviewPointerLeave = useCallback(() => {
+    setFieldMouse(null);
+  }, []);
 
   return (
     <div className="app-shell">
@@ -1256,6 +1390,39 @@ export default function App() {
               </select>
               <span className="field-hint">Used by Field snake to bias non-forking paths by local direction.</span>
             </div>
+
+            <label className="switch-row" htmlFor="evolveAngleField">
+              <span>
+                <span className="field-label">Evolve angle field</span>
+                <span className="field-hint">Animates Field snake direction and the generated field background.</span>
+              </span>
+              <input
+                checked={evolveAngleField}
+                className="switch-input"
+                id="evolveAngleField"
+                onChange={(event) => setEvolveAngleField(event.target.checked)}
+                type="checkbox"
+              />
+            </label>
+
+            <label className="switch-row" htmlFor="mouseModulation">
+              <span>
+                <span className="field-label">Mouse modulation</span>
+                <span className="field-hint">Move over the preview to pull and ripple the active angle field.</span>
+              </span>
+              <input
+                checked={mouseModulation}
+                className="switch-input"
+                id="mouseModulation"
+                onChange={(event) => {
+                  setMouseModulation(event.target.checked);
+                  if (!event.target.checked) {
+                    setFieldMouse(null);
+                  }
+                }}
+                type="checkbox"
+              />
+            </label>
 
             <div className="field">
               <span className="field-label">Connector rendering</span>
@@ -1430,7 +1597,14 @@ export default function App() {
         </div>
 
         <div className="preview-stage">
-          <canvas aria-label="Generated QR code preview" className="qr-canvas" id="output" ref={outputRef} />
+          <canvas
+            aria-label="Generated QR code preview"
+            className="qr-canvas"
+            id="output"
+            onPointerLeave={handlePreviewPointerLeave}
+            onPointerMove={handlePreviewPointerMove}
+            ref={outputRef}
+          />
         </div>
       </main>
     </div>
