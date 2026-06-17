@@ -50,111 +50,141 @@ import {
 export default function App() {
   const [text, setText] = useStoredState("text", "https://nity.ch", parseString);
   const [debouncedText, setDebouncedText] = useState(text);
-  const [errorLevel, setErrorLevel] = useStoredState<ErrorLevel>("errorLevel", "H", (value, fallback) =>
-    parseOption(errorLevels, value, fallback),
+  const [errorLevel, setErrorLevel] = useStoredState<ErrorLevel>(
+    "errorLevel",
+    mainPresetSettings.errorLevel,
+    (value, fallback) => parseOption(errorLevels, value, fallback),
   );
-  const [userSize, setUserSize] = useStoredState("userSize", 6, parseQrSize);
-  const [fillColor, setFillColor] = useStoredState("fillColor", "#7fb8d8", parseFillColor);
-  const [qrDarkColor, setQrDarkColor] = useStoredState("qrDarkColor", "#000000", parseFillColor);
-  const [qrLightColor, setQrLightColor] = useStoredState("qrLightColor", "#ffffff", parseFillColor);
+  const [userSize, setUserSize] = useStoredState("userSize", mainPresetSettings.userSize, parseQrSize);
+  const [fillColor, setFillColor] = useStoredState("fillColor", mainPresetSettings.fillColor, parseFillColor);
+  const [qrDarkColor, setQrDarkColor] = useStoredState("qrDarkColor", mainPresetSettings.qrDarkColor, parseFillColor);
+  const [qrLightColor, setQrLightColor] = useStoredState("qrLightColor", mainPresetSettings.qrLightColor, parseFillColor);
   const [fieldFirstColor, setFieldFirstColor] = useStoredState(
     "fieldFirstColor",
-    "#ff3eb5",
+    mainPresetSettings.fieldFirstColor,
     parseFillColor,
   );
   const [fieldSecondColor, setFieldSecondColor] = useStoredState(
     "fieldSecondColor",
-    "#149cff",
+    mainPresetSettings.fieldSecondColor,
     parseFillColor,
   );
   const [backgroundSource, setBackgroundSource] = useStoredState<BackgroundSource>(
     "backgroundSource",
-    "field",
+    mainPresetSettings.backgroundSource,
     (value, fallback) => parseOption(backgroundSources, value, fallback),
   );
   const [backgroundImageHref, setBackgroundImageHref] = useStoredState(
     "backgroundImageHref",
-    "",
+    mainPresetSettings.backgroundImageHref,
     parseImageDataUrl,
   );
-  const [dotShrinkage, setDotShrinkage] = useStoredState<DotShrinkage>("dotShrinkage", 2, (value, fallback) =>
-    parseOption(dotShrinkages, value, fallback),
+  const [dotShrinkage, setDotShrinkage] = useStoredState<DotShrinkage>(
+    "dotShrinkage",
+    mainPresetSettings.dotShrinkage,
+    (value, fallback) => parseOption(dotShrinkages, value, fallback),
   );
   const [joinAlgorithm, setJoinAlgorithm] = useStoredState<JoinAlgorithm>(
     "joinAlgorithm",
-    "fieldSnake",
+    mainPresetSettings.joinAlgorithm,
     (value, fallback) => parseOption(joinAlgorithms, value, fallback),
   );
   const [allowDiagonalJoins, setAllowDiagonalJoins] = useStoredState(
     "allowDiagonalJoins",
-    true,
+    mainPresetSettings.allowDiagonalJoins,
     parseBoolean,
   );
-  const [angleField, setAngleField] = useStoredState<AngleField>("angleField", "rings", (value, fallback) =>
-    parseOption(angleFields, value, fallback),
+  const [angleField, setAngleField] = useStoredState<AngleField>(
+    "angleField",
+    mainPresetSettings.angleField,
+    (value, fallback) => parseOption(angleFields, value, fallback),
   );
   const [connectorStyle, setConnectorStyle] = useStoredState<ConnectorStyle>(
     "connectorStyle",
-    "dots",
+    mainPresetSettings.connectorStyle,
     (value, fallback) => parseOption(connectorStyles, value, fallback),
   );
-  const [pathStrokeSize, setPathStrokeSize] = useStoredState("pathStrokeSize", 2, parsePathStrokeSize);
-  const [pathSmoothing, setPathSmoothing] = useStoredState("pathSmoothing", 0, parsePercentage);
+  const [pathStrokeSize, setPathStrokeSize] = useStoredState(
+    "pathStrokeSize",
+    mainPresetSettings.pathStrokeSize,
+    parsePathStrokeSize,
+  );
+  const [pathSmoothing, setPathSmoothing] = useStoredState(
+    "pathSmoothing",
+    mainPresetSettings.pathSmoothing,
+    parsePercentage,
+  );
   const [standaloneDotScale, setStandaloneDotScale] = useStoredState(
     "standaloneDotScale",
-    2,
+    mainPresetSettings.standaloneDotScale,
     parseStandaloneDotScale,
   );
-  const [paddingModules, setPaddingModules] = useStoredState("paddingModules", 3, parsePadding);
+  const [paddingModules, setPaddingModules] = useStoredState(
+    "paddingModules",
+    mainPresetSettings.paddingModules,
+    parsePadding,
+  );
   const [syntheticPaddingData, setSyntheticPaddingData] = useStoredState(
     "syntheticPaddingData",
-    true,
+    mainPresetSettings.syntheticPaddingData,
     parseBoolean,
   );
   const [syntheticPaddingFieldCompliance, setSyntheticPaddingFieldCompliance] = useStoredState(
     "syntheticPaddingFieldCompliance",
-    100,
+    mainPresetSettings.syntheticPaddingFieldCompliance,
     parsePercentage,
   );
   const [backgroundPixelation, setBackgroundPixelation] = useStoredState(
     "backgroundPixelation",
-    0,
+    mainPresetSettings.backgroundPixelation,
     parseBackgroundPixelation,
   );
-  const [maskPattern, setMaskPattern] = useStoredState<QRMaskPattern>("maskPattern", 0, (value, fallback) =>
-    parseOption(qrMaskPatterns, value, fallback),
+  const [maskPattern, setMaskPattern] = useStoredState<QRMaskPattern>(
+    "maskPattern",
+    mainPresetSettings.maskPattern,
+    (value, fallback) => parseOption(qrMaskPatterns, value, fallback),
   );
   const [maskPlaySpeed, setMaskPlaySpeed] = useStoredState(
     "maskPlaySpeed",
-    100,
+    mainPresetSettings.maskPlaySpeed,
     parseSpeedPercentage,
   );
-  const [strokeCap, setStrokeCap] = useStoredState<StrokeCap>("strokeCap", "square", (value, fallback) =>
-    parseOption(strokeCaps, value, fallback),
+  const [strokeCap, setStrokeCap] = useStoredState<StrokeCap>(
+    "strokeCap",
+    mainPresetSettings.strokeCap,
+    (value, fallback) => parseOption(strokeCaps, value, fallback),
   );
   const [evolveAngleField, setEvolveAngleField] = useStoredState(
     "evolveAngleField",
-    true,
+    mainPresetSettings.evolveAngleField,
     parseBoolean,
   );
   const [angleFieldSpeed, setAngleFieldSpeed] = useStoredState(
     "angleFieldSpeed",
-    100,
+    mainPresetSettings.angleFieldSpeed,
     parseSpeedPercentage,
   );
   const [mouseModulation, setMouseModulation] = useStoredState(
     "mouseModulation",
-    true,
+    mainPresetSettings.mouseModulation,
     parseBoolean,
   );
-  const [mouseSmoothing, setMouseSmoothing] = useStoredState("mouseSmoothing", 30, parsePercentage);
+  const [mouseSmoothing, setMouseSmoothing] = useStoredState(
+    "mouseSmoothing",
+    mainPresetSettings.mouseSmoothing,
+    parsePercentage,
+  );
   const [advancedOpen, setAdvancedOpen] = useStoredState("advancedOpen", false, parseBoolean);
   const [savedPreset, setSavedPreset] = useStoredState<PresetSettings | null>(
     "savedPreset",
     null,
     parsePresetSettings,
   );
-  const [isPlayingMasks, setIsPlayingMasks] = useStoredState("isPlayingMasks", false, parseBoolean);
+  const [isPlayingMasks, setIsPlayingMasks] = useStoredState(
+    "isPlayingMasks",
+    mainPresetSettings.isPlayingMasks,
+    parseBoolean,
+  );
   const [generatedBackgroundHref, setGeneratedBackgroundHref] = useState("");
   const [fieldPhase, setFieldPhase] = useState(0);
   const [fieldMouse, setFieldMouse] = useState<Point | null>(null);
@@ -596,7 +626,6 @@ export default function App() {
     setFieldPhase(0);
     generatedBackgroundHrefRef.current = "";
     setGeneratedBackgroundHref("");
-    setIsPlayingMasks(false);
   };
 
   const saveCurrentPreset = () => {
