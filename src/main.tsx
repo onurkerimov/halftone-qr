@@ -4,7 +4,8 @@ import App from "./App";
 import { EmbedRoute } from "./EmbedRoute";
 import "./styles/main.scss";
 
-const route = window.location.pathname === "/embed" ? <EmbedRoute /> : <App />;
+const routePath = window.location.pathname.replace(/\/$/, "");
+const route = routePath === "/embed" ? <EmbedRoute /> : <App />;
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

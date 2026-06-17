@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/embed",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/embed/",
+      "destination": "/index.html"
+    }
+  ]
+}
