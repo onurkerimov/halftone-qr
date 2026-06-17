@@ -33,7 +33,7 @@ export function createRenderResult(
   qrDarkColor: string,
   qrLightColor: string,
   backgroundImageHref: string,
-  backgroundImage: HTMLImageElement | null,
+  backgroundImage: HTMLCanvasElement | HTMLImageElement | null,
   backgroundSource: BackgroundSource,
   backgroundPixelation: number,
   joinAlgorithm: JoinAlgorithm,
@@ -98,7 +98,7 @@ export function createRenderResult(
   ];
 
   if (backgroundImageHref) {
-    if (backgroundSource === "uploaded" && backgroundImage && backgroundPixelation > 0) {
+    if (backgroundSource === "uploaded" && backgroundImage instanceof HTMLImageElement && backgroundPixelation > 0) {
       shapes.push(...createPixelatedBackgroundRects(backgroundImage, 0, 0, width, width, backgroundPixelationGrid));
     } else {
       shapes.push({
@@ -214,7 +214,7 @@ export function createRenderResult(
 export function drawRenderResult(
   canvas: HTMLCanvasElement,
   renderResult: RenderResult,
-  backgroundImage: HTMLImageElement | null,
+  backgroundImage: HTMLCanvasElement | HTMLImageElement | null,
 ) {
   canvas.width = renderResult.width;
   canvas.height = renderResult.width;

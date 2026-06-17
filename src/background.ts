@@ -24,18 +24,20 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
 
 export function drawCoverImage(
   ctx: CanvasRenderingContext2D,
-  image: HTMLImageElement,
+  image: HTMLCanvasElement | HTMLImageElement,
   x: number,
   y: number,
   width: number,
   height: number,
   pixelated = false,
 ) {
-  const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+  const imageWidth = image instanceof HTMLCanvasElement ? image.width : image.naturalWidth;
+  const imageHeight = image instanceof HTMLCanvasElement ? image.height : image.naturalHeight;
+  const scale = Math.max(width / imageWidth, height / imageHeight);
   const sourceWidth = width / scale;
   const sourceHeight = height / scale;
-  const sourceX = (image.naturalWidth - sourceWidth) / 2;
-  const sourceY = (image.naturalHeight - sourceHeight) / 2;
+  const sourceX = (imageWidth - sourceWidth) / 2;
+  const sourceY = (imageHeight - sourceHeight) / 2;
   const previousImageSmoothing = ctx.imageSmoothingEnabled;
 
   ctx.imageSmoothingEnabled = !pixelated;
@@ -101,6 +103,22 @@ export function createGeneratedFieldBackground(
   secondColor: string,
   sourceResolution: number,
 ): string {
+  return createGeneratedFieldBackgroundCanvas(
+    angleField,
+    fieldContext,
+    firstColor,
+    secondColor,
+    sourceResolution,
+  ).toDataURL("image/png");
+}
+
+export function createGeneratedFieldBackgroundCanvas(
+  angleField: AngleField,
+  fieldContext: FieldContext,
+  firstColor: string,
+  secondColor: string,
+  sourceResolution: number,
+): HTMLCanvasElement {
   const requestedSize = sourceResolution > 0 ? sourceResolution : maxGeneratedFieldResolution;
   const size = clamp(Math.round(requestedSize), 1, maxGeneratedFieldResolution);
   const canvas = document.createElement("canvas");
@@ -133,5 +151,5 @@ export function createGeneratedFieldBackground(
   }
 
   ctx.putImageData(image, 0, 0);
-  return canvas.toDataURL("image/png");
+  return canvas;
 }
