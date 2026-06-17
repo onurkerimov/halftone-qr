@@ -33,6 +33,7 @@ import {
   maxGeneratedFieldResolution,
   parseBackgroundPixelation,
   parseBoolean,
+  parseFieldBackgroundDensity,
   parseFillColor,
   parseImageDataUrl,
   parseOption,
@@ -60,6 +61,8 @@ const verticalFieldPresetSettings: PresetSettings = {
   dotShrinkage: 2,
   errorLevel: "H",
   evolveAngleField: true,
+  fieldBackgroundChaos: 35,
+  fieldBackgroundDensity: 200,
   fieldBackgroundMode: "contours",
   fieldFirstColor: "#d562a9",
   fieldSecondColor: "#5ba3d7",
@@ -93,13 +96,15 @@ const ringsPresetSettings: PresetSettings = {
   dotShrinkage: 2,
   errorLevel: "H",
   evolveAngleField: true,
+  fieldBackgroundChaos: 45,
+  fieldBackgroundDensity: 280,
   fieldBackgroundMode: "contours",
   fieldFirstColor: "#000000",
   fieldSecondColor: "#ffffff",
   fillColor: "#000000",
   isPlayingMasks: true,
   joinAlgorithm: "fieldSnake",
-  maskPattern: 0,
+  maskPattern: 2,
   maskPlaySpeed: 80,
   mouseModulation: true,
   mouseSmoothing: 0,
@@ -136,6 +141,16 @@ export default function App() {
     "fieldSecondColor",
     mainPresetSettings.fieldSecondColor,
     parseFillColor,
+  );
+  const [fieldBackgroundDensity, setFieldBackgroundDensity] = useStoredState(
+    "fieldBackgroundDensity",
+    mainPresetSettings.fieldBackgroundDensity,
+    parseFieldBackgroundDensity,
+  );
+  const [fieldBackgroundChaos, setFieldBackgroundChaos] = useStoredState(
+    "fieldBackgroundChaos",
+    mainPresetSettings.fieldBackgroundChaos,
+    parsePercentage,
   );
   const [fieldBackgroundMode, setFieldBackgroundMode] = useStoredState<FieldBackgroundMode>(
     "fieldBackgroundMode",
@@ -482,6 +497,8 @@ export default function App() {
       fieldSecondColor,
       generatedFieldResolution,
       fieldBackgroundMode,
+      fieldBackgroundDensity,
+      fieldBackgroundChaos,
     );
 
     if (generatedBackgroundHrefRef.current !== nextGeneratedBackgroundHref) {
@@ -491,6 +508,8 @@ export default function App() {
   }, [
     angleField,
     backgroundSource,
+    fieldBackgroundChaos,
+    fieldBackgroundDensity,
     fieldFirstColor,
     fieldBackgroundMode,
     fieldMouse,
@@ -630,6 +649,8 @@ export default function App() {
     dotShrinkage,
     errorLevel,
     evolveAngleField,
+    fieldBackgroundChaos,
+    fieldBackgroundDensity,
     fieldBackgroundMode,
     fieldFirstColor,
     fieldSecondColor,
@@ -659,6 +680,8 @@ export default function App() {
     setIsPlayingMasks(preset.isPlayingMasks);
     setQrDarkColor(preset.qrDarkColor);
     setQrLightColor(preset.qrLightColor);
+    setFieldBackgroundChaos(preset.fieldBackgroundChaos);
+    setFieldBackgroundDensity(preset.fieldBackgroundDensity);
     setFieldFirstColor(preset.fieldFirstColor);
     setFieldBackgroundMode(preset.fieldBackgroundMode);
     setFieldSecondColor(preset.fieldSecondColor);
@@ -749,6 +772,8 @@ export default function App() {
         effectiveBackgroundPixelation={effectiveBackgroundPixelation}
         errorLevel={errorLevel}
         evolveAngleField={evolveAngleField}
+        fieldBackgroundChaos={fieldBackgroundChaos}
+        fieldBackgroundDensity={fieldBackgroundDensity}
         fieldBackgroundMode={fieldBackgroundMode}
         fieldFirstColor={fieldFirstColor}
         fieldMouseRef={fieldMouseRef}
@@ -781,6 +806,8 @@ export default function App() {
         setDotShrinkage={setDotShrinkage}
         setErrorLevel={setErrorLevel}
         setEvolveAngleField={setEvolveAngleField}
+        setFieldBackgroundChaos={setFieldBackgroundChaos}
+        setFieldBackgroundDensity={setFieldBackgroundDensity}
         setFieldBackgroundMode={setFieldBackgroundMode}
         setFieldFirstColor={setFieldFirstColor}
         setFieldMouse={setFieldMouse}

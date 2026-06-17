@@ -63,6 +63,10 @@ export function parseSpeedPercentage(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 300 ? value : fallback;
 }
 
+export function parseFieldBackgroundDensity(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 50 && value <= 500 ? value : fallback;
+}
+
 export function parseOption<T extends string | number>(values: T[], value: unknown, fallback: T): T {
   return isOneOf(values, value) ? value : fallback;
 }
@@ -83,6 +87,11 @@ export function parsePresetSettings(value: unknown, fallback: PresetSettings | n
     dotShrinkage: parseOption(dotShrinkages, value.dotShrinkage, mainPresetSettings.dotShrinkage),
     errorLevel: parseOption(errorLevels, value.errorLevel, mainPresetSettings.errorLevel),
     evolveAngleField: parseBoolean(value.evolveAngleField, mainPresetSettings.evolveAngleField),
+    fieldBackgroundChaos: parsePercentage(value.fieldBackgroundChaos, mainPresetSettings.fieldBackgroundChaos),
+    fieldBackgroundDensity: parseFieldBackgroundDensity(
+      value.fieldBackgroundDensity,
+      mainPresetSettings.fieldBackgroundDensity,
+    ),
     fieldBackgroundMode: parseOption(
       fieldBackgroundModes,
       value.fieldBackgroundMode,

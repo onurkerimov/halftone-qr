@@ -137,9 +137,29 @@ function createFieldSample(x: number, y: number, size: number, fieldContext: Fie
   };
 }
 
-function getFieldBackgroundPhase(angleField: AngleField, sample: FieldSample): number {
-  const linear = 0.16;
-  const phase = sample.phase * 1.8;
+function getOrganicFieldBackgroundPhaseWarp(sample: FieldSample, fieldBackgroundChaos: number): number {
+  const chaos = clamp(fieldBackgroundChaos, 0, 100) / 100;
+
+  if (chaos <= 0) {
+    return 0;
+  }
+
+  const normalizedDistance = sample.distance / Math.max(1, sample.size - 1);
+  const swirl = Math.sin(sample.angle * 3.4 + normalizedDistance * 19 + sample.phase * 0.65);
+  const cellular = Math.sin((sample.nx * 5.7 + sample.ny * 3.3) * Math.PI + sample.phase * 0.4);
+  const crossflow = Math.cos((sample.nx - sample.ny) * Math.PI * 7.1 - sample.angle * 2.2);
+
+  return (swirl * 1.7 + cellular * 1.05 + crossflow * 0.8) * chaos * 3.2;
+}
+
+function getFieldBackgroundPhase(
+  angleField: AngleField,
+  sample: FieldSample,
+  fieldBackgroundDensity: number,
+  fieldBackgroundChaos: number,
+): number {
+  const linear = 0.16 * (clamp(fieldBackgroundDensity, 50, 500) / 100);
+  const phase = sample.phase * 1.8 + getOrganicFieldBackgroundPhaseWarp(sample, fieldBackgroundChaos);
 
   switch (angleField) {
     case "none":
@@ -221,6 +241,8 @@ export function createGeneratedFieldBackground(
   secondColor: string,
   sourceResolution: number,
   fieldBackgroundMode: FieldBackgroundMode = "contours",
+  fieldBackgroundDensity = 200,
+  fieldBackgroundChaos = 35,
 ): string {
   return createGeneratedFieldBackgroundCanvas(
     angleField,
@@ -229,6 +251,8 @@ export function createGeneratedFieldBackground(
     secondColor,
     sourceResolution,
     fieldBackgroundMode,
+    fieldBackgroundDensity,
+    fieldBackgroundChaos,
   ).toDataURL("image/png");
 }
 
@@ -239,6 +263,8 @@ export function createGeneratedFieldBackgroundCanvas(
   secondColor: string,
   sourceResolution: number,
   fieldBackgroundMode: FieldBackgroundMode = "contours",
+  fieldBackgroundDensity = 200,
+  fieldBackgroundChaos = 35,
 ): HTMLCanvasElement {
   const requestedSize = sourceResolution > 0 ? sourceResolution : maxGeneratedFieldResolution;
   const size = clamp(Math.round(requestedSize), 1, maxGeneratedFieldResolution);
@@ -257,7 +283,12 @@ export function createGeneratedFieldBackgroundCanvas(
       const fieldPhase =
         fieldBackgroundMode === "normal"
           ? getNormalFieldBackgroundPhase(angleField, x, y, size, fieldContext)
-          : getFieldBackgroundPhase(angleField, createFieldSample(x, y, size, fieldContext));
+          : getFieldBackgroundPhase(
+              angleField,
+              createFieldSample(x, y, size, fieldContext),
+              fieldBackgroundDensity,
+              fieldBackgroundChaos,
+            );
       const stripe = Math.sin(fieldPhase) >= 0 ? firstStripe : secondStripe;
       const index = (y * size + x) * 4;
 

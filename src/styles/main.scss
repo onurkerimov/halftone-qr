@@ -230,9 +230,53 @@ h2 {
 .advanced-content {
   border-top: 1px solid var(--border);
   display: grid;
-  gap: 18px;
+  gap: 10px;
   margin-top: 16px;
   padding-top: 16px;
+}
+
+.settings-accordion {
+  border-bottom: 1px solid var(--border);
+  display: grid;
+}
+
+.settings-accordion:first-child {
+  border-top: 1px solid var(--border);
+}
+
+.settings-accordion-summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  list-style: none;
+  padding: 14px 0;
+}
+
+.settings-accordion-summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-accordion-summary::after {
+  color: var(--muted-strong);
+  content: "+";
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.settings-accordion[open] > .settings-accordion-summary::after {
+  content: "-";
+}
+
+.settings-accordion-summary:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 4px;
+}
+
+.settings-accordion-content {
+  display: grid;
+  gap: 18px;
+  padding: 2px 0 18px;
 }
 
 .field {

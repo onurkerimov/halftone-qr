@@ -118,6 +118,8 @@ export type PresetSettings = {
   dotShrinkage: DotShrinkage;
   errorLevel: ErrorLevel;
   evolveAngleField: boolean;
+  fieldBackgroundChaos: number;
+  fieldBackgroundDensity: number;
   fieldBackgroundMode: FieldBackgroundMode;
   fieldFirstColor: string;
   fieldSecondColor: string;
