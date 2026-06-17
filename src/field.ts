@@ -20,6 +20,10 @@ export function normalizeVector(vector: Point): Point {
   };
 }
 
+function signOrOne(value: number): number {
+  return value < 0 ? -1 : 1;
+}
+
 export function applyFieldDynamics(vector: Point, x: number, y: number, size: number, fieldContext: FieldContext): Point {
   const phaseTurn = fieldContext.phase * 0.035;
   const phaseVector = rotateVector(vector, phaseTurn);
@@ -60,6 +64,12 @@ export function getFieldVector(
   const dy = y - centerY;
   const distance = Math.hypot(dx, dy) || 1;
   const phase = fieldContext.phase;
+  const normalizedSize = Math.max(1, size - 1);
+  const nx = x / normalizedSize;
+  const ny = y / normalizedSize;
+  const absDx = Math.abs(dx);
+  const absDy = Math.abs(dy);
+  const angle = Math.atan2(dy, dx);
 
   switch (field) {
     case "horizontal":
@@ -96,8 +106,90 @@ export function getFieldVector(
     case "pinwheel":
       return applyFieldDynamics(
         {
-          x: Math.cos(Math.atan2(dy, dx) * 3 + phase * 0.35),
-          y: Math.sin(Math.atan2(dy, dx) * 3 + phase * 0.35),
+          x: Math.cos(angle * 3 + phase * 0.35),
+          y: Math.sin(angle * 3 + phase * 0.35),
+        },
+        x,
+        y,
+        size,
+        fieldContext,
+      );
+    case "diamond":
+      return applyFieldDynamics(normalizeVector({ x: signOrOne(dx), y: signOrOne(dy) }), x, y, size, fieldContext);
+    case "vortex":
+      return applyFieldDynamics(
+        normalizeVector({
+          x: dx / distance - (dy / distance) * 1.7,
+          y: dy / distance + (dx / distance) * 1.7,
+        }),
+        x,
+        y,
+        size,
+        fieldContext,
+      );
+    case "noise":
+      return applyFieldDynamics(
+        {
+          x: Math.cos(
+            Math.sin(nx * Math.PI * 3.8 + phase * 0.25) +
+              Math.cos(ny * Math.PI * 5.1 - phase * 0.18) +
+              Math.sin((nx + ny) * Math.PI * 2.2),
+          ),
+          y: Math.sin(
+            Math.sin(nx * Math.PI * 4.4 - phase * 0.2) +
+              Math.cos(ny * Math.PI * 3.6 + phase * 0.22) +
+              Math.cos((nx - ny) * Math.PI * 2.6),
+          ),
+        },
+        x,
+        y,
+        size,
+        fieldContext,
+      );
+    case "cross": {
+      const horizontalWeight = 1 / (1 + absDy * 0.85);
+      const verticalWeight = 1 / (1 + absDx * 0.85);
+
+      return applyFieldDynamics({ x: horizontalWeight, y: verticalWeight }, x, y, size, fieldContext);
+    }
+    case "hourglass":
+      return applyFieldDynamics(
+        normalizeVector({
+          x: signOrOne(dx) * (0.35 + Math.abs(ny - 0.5) * 2),
+          y: dy * -0.75,
+        }),
+        x,
+        y,
+        size,
+        fieldContext,
+      );
+    case "fan":
+      return applyFieldDynamics(
+        normalizeVector({
+          x: x + 1,
+          y: y - centerY,
+        }),
+        x,
+        y,
+        size,
+        fieldContext,
+      );
+    case "twist":
+      return applyFieldDynamics(
+        {
+          x: Math.cos((nx + ny - 1) * Math.PI + phase * 0.2),
+          y: Math.sin((nx + ny - 1) * Math.PI + phase * 0.2),
+        },
+        x,
+        y,
+        size,
+        fieldContext,
+      );
+    case "flowMap":
+      return applyFieldDynamics(
+        {
+          x: 1 + Math.sin(ny * Math.PI * 2.4 + phase * 0.28) * 0.9 + Math.cos(nx * Math.PI * 1.6) * 0.35,
+          y: Math.sin(nx * Math.PI * 2.1 - phase * 0.22) * 0.95 + Math.cos((nx + ny) * Math.PI * 1.4) * 0.45,
         },
         x,
         y,

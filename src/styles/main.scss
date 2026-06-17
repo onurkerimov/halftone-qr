@@ -257,6 +257,18 @@ h2 {
   margin-top: 6px;
 }
 
+.sr-only {
+  border: 0;
+  clip: rect(0, 0, 0, 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
 .header-copy,
 .preview-copy {
   margin-top: 0;
@@ -344,6 +356,109 @@ h2 {
   height: 42px;
   line-height: 40px;
   padding: 0 12px;
+}
+
+.angle-field-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+}
+
+.angle-field-choice {
+  cursor: pointer;
+  display: block;
+  height: 44px;
+  width: 100%;
+}
+
+.angle-field-option {
+  aspect-ratio: 1 / 1;
+  background: var(--input);
+  border: 1px solid var(--border-strong);
+  color: inherit;
+  display: grid;
+  height: 44px;
+  padding: 0;
+  place-items: center;
+  position: relative;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+  width: 100%;
+}
+
+.angle-field-choice:hover .angle-field-option {
+  background: var(--panel-strong);
+  border-color: var(--muted);
+}
+
+.angle-field-input:focus-visible + .angle-field-option {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.angle-field-input:checked + .angle-field-option {
+  background: var(--foreground);
+  border-color: var(--foreground);
+  box-shadow: 0 0 0 1px #050505 inset;
+}
+
+.angle-field-input:checked + .angle-field-option::after {
+  background: #050505;
+  content: "";
+  height: 5px;
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  width: 5px;
+}
+
+.angle-field-preview {
+  height: 100%;
+  width: 100%;
+}
+
+.angle-field-preview-bg {
+  fill: #0b0b0b;
+}
+
+.angle-field-vector {
+  stroke: var(--muted-strong);
+  stroke-linecap: square;
+  stroke-width: 1.35;
+}
+
+.angle-field-dot {
+  fill: var(--muted);
+}
+
+.angle-field-input:checked + .angle-field-option .angle-field-preview-bg {
+  fill: #f3f1eb;
+}
+
+.angle-field-input:checked + .angle-field-option .angle-field-vector {
+  stroke: #050505;
+}
+
+.angle-field-input:checked + .angle-field-option .angle-field-dot {
+  fill: #050505;
+}
+
+.angle-field-selected {
+  background: var(--input);
+  border: 1px solid var(--border);
+  color: var(--muted-strong);
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+  margin-top: 2px;
+  min-height: 32px;
+  padding: 8px 10px;
+  text-transform: uppercase;
 }
 
 .file-row {

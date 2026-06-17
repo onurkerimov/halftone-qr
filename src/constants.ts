@@ -4,6 +4,7 @@ import type {
   ConnectorStyle,
   DotShrinkage,
   ErrorLevel,
+  FieldBackgroundMode,
   FieldContext,
   JoinAlgorithm,
   PresetSettings,
@@ -42,11 +43,21 @@ export const angleFields: AngleField[] = [
   "spiral",
   "wavy",
   "pinwheel",
+  "diamond",
+  "vortex",
+  "noise",
+  "cross",
+  "hourglass",
+  "fan",
+  "twist",
+  "flowMap",
 ];
 
 export const connectorStyles: ConnectorStyle[] = ["dots", "paths"];
 
 export const backgroundSources: BackgroundSource[] = ["color", "uploaded", "field"];
+
+export const fieldBackgroundModes: FieldBackgroundMode[] = ["contours", "normal"];
 
 export const qrMaskPatterns: QRMaskPattern[] = [0, 1, 2, 3, 4, 5, 6, 7];
 
@@ -70,6 +81,7 @@ export const mainPresetSettings: PresetSettings = {
   dotShrinkage: 2,
   errorLevel: "H",
   evolveAngleField: true,
+  fieldBackgroundMode: "contours",
   fieldFirstColor: "#d562a9",
   fieldSecondColor: "#5ba3d7",
   fillColor: "#7fb8d8",

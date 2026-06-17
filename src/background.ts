@@ -1,6 +1,6 @@
 import { getFieldVector } from "./field";
 import { maxGeneratedFieldResolution } from "./constants";
-import type { AngleField, FieldContext, RenderRect } from "./types";
+import type { AngleField, FieldBackgroundMode, FieldContext, Point, RenderRect } from "./types";
 import { clamp } from "./utils";
 
 export function get2d(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
@@ -96,12 +96,131 @@ export function hexToRgb(hex: string): [number, number, number] {
   ];
 }
 
+type FieldSample = {
+  absDx: number;
+  absDy: number;
+  angle: number;
+  center: Point;
+  distance: number;
+  nx: number;
+  ny: number;
+  phase: number;
+  size: number;
+  x: number;
+  y: number;
+};
+
+function createFieldSample(x: number, y: number, size: number, fieldContext: FieldContext): FieldSample {
+  const baseCenter = (size - 1) / 2;
+  const mouseCenterX = fieldContext.mouse ? fieldContext.mouse.x * (size - 1) : baseCenter;
+  const mouseCenterY = fieldContext.mouse ? fieldContext.mouse.y * (size - 1) : baseCenter;
+  const center = {
+    x: baseCenter + (mouseCenterX - baseCenter) * 0.9,
+    y: baseCenter + (mouseCenterY - baseCenter) * 0.9,
+  };
+  const dx = x - center.x;
+  const dy = y - center.y;
+  const normalizedSize = Math.max(1, size - 1);
+
+  return {
+    absDx: Math.abs(dx),
+    absDy: Math.abs(dy),
+    angle: Math.atan2(dy, dx),
+    center,
+    distance: Math.hypot(dx, dy),
+    nx: x / normalizedSize,
+    ny: y / normalizedSize,
+    phase: fieldContext.phase,
+    size,
+    x,
+    y,
+  };
+}
+
+function getFieldBackgroundPhase(angleField: AngleField, sample: FieldSample): number {
+  const linear = 0.16;
+  const phase = sample.phase * 1.8;
+
+  switch (angleField) {
+    case "none":
+      return Math.PI / 2;
+    case "horizontal":
+      return sample.y * linear + phase;
+    case "vertical":
+      return sample.x * linear + phase;
+    case "diagonalDown":
+      return (sample.y - sample.x) * linear * 0.72 + phase;
+    case "diagonalUp":
+      return (sample.x + sample.y) * linear * 0.72 + phase;
+    case "radial":
+      return sample.angle * 8 + phase;
+    case "rings":
+      return sample.distance * linear + phase;
+    case "spiral":
+      return sample.angle * 5 + sample.distance * linear * 0.8 + phase;
+    case "wavy":
+      return (
+        (sample.y + Math.sin(sample.nx * Math.PI * 4 + sample.phase * 0.45) * sample.size * 0.07) * linear +
+        phase
+      );
+    case "pinwheel":
+      return sample.angle * 9 + sample.distance * linear * 0.35 + phase;
+    case "diamond":
+      return (sample.absDx + sample.absDy) * linear + phase;
+    case "vortex":
+      return sample.angle * 4 - Math.log(sample.distance + 1) * 5.8 + phase;
+    case "noise":
+      return (
+        Math.sin(sample.nx * Math.PI * 3.8 + sample.phase * 0.25) +
+        Math.cos(sample.ny * Math.PI * 5.1 - sample.phase * 0.18) +
+        Math.sin((sample.nx + sample.ny) * Math.PI * 2.2) +
+        phase
+      );
+    case "cross":
+      return Math.min(sample.absDx, sample.absDy) * linear * 1.35 + phase;
+    case "hourglass":
+      return (sample.absDx - sample.absDy * 0.68) * linear + phase;
+    case "fan":
+      return Math.atan2(sample.y - sample.center.y, sample.x + sample.size * 0.12) * 8 + phase;
+    case "twist":
+      return (
+        (sample.nx + sample.ny - 1) * Math.PI * 5 +
+        Math.sin((sample.nx - sample.ny) * Math.PI * 2 + sample.phase * 0.2) * 1.4 +
+        phase
+      );
+    case "flowMap":
+      return (
+        (sample.y +
+          Math.sin(sample.nx * Math.PI * 2.1 - sample.phase * 0.22) * sample.size * 0.09 +
+          Math.cos((sample.nx + sample.ny) * Math.PI * 1.4) * sample.size * 0.05) *
+          linear +
+        phase
+      );
+  }
+}
+
+function getNormalFieldBackgroundPhase(
+  angleField: AngleField,
+  x: number,
+  y: number,
+  size: number,
+  fieldContext: FieldContext,
+): number {
+  const fieldVector = getFieldVector(angleField, x, y, size, fieldContext);
+  const fieldLength = Math.hypot(fieldVector.x, fieldVector.y) || 1;
+  const normalX = -fieldVector.y / fieldLength;
+  const normalY = fieldVector.x / fieldLength;
+
+  return (x * normalX + y * normalY) * 0.08 + fieldContext.phase * 1.8;
+}
+
 export function createGeneratedFieldBackground(
   angleField: AngleField,
   fieldContext: FieldContext,
   firstColor: string,
   secondColor: string,
   sourceResolution: number,
+  fieldBackgroundMode: FieldBackgroundMode = "contours",
 ): string {
   return createGeneratedFieldBackgroundCanvas(
     angleField,
@@ -109,6 +228,7 @@ export function createGeneratedFieldBackground(
     firstColor,
     secondColor,
     sourceResolution,
+    fieldBackgroundMode,
   ).toDataURL("image/png");
 }
 
@@ -118,6 +238,7 @@ export function createGeneratedFieldBackgroundCanvas(
   firstColor: string,
   secondColor: string,
   sourceResolution: number,
+  fieldBackgroundMode: FieldBackgroundMode = "contours",
 ): HTMLCanvasElement {
   const requestedSize = sourceResolution > 0 ? sourceResolution : maxGeneratedFieldResolution;
   const size = clamp(Math.round(requestedSize), 1, maxGeneratedFieldResolution);
@@ -133,14 +254,11 @@ export function createGeneratedFieldBackgroundCanvas(
 
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
-      const fieldVector = getFieldVector(angleField, x, y, size, fieldContext);
-      const fieldLength = Math.hypot(fieldVector.x, fieldVector.y) || 1;
-      const normalX = -fieldVector.y / fieldLength;
-      const normalY = fieldVector.x / fieldLength;
-      const stripe =
-        Math.sin((x * normalX + y * normalY) * 0.08 + fieldContext.phase * 1.8) >= 0
-          ? firstStripe
-          : secondStripe;
+      const fieldPhase =
+        fieldBackgroundMode === "normal"
+          ? getNormalFieldBackgroundPhase(angleField, x, y, size, fieldContext)
+          : getFieldBackgroundPhase(angleField, createFieldSample(x, y, size, fieldContext));
+      const stripe = Math.sin(fieldPhase) >= 0 ? firstStripe : secondStripe;
       const index = (y * size + x) * 4;
 
       data[index] = stripe[0];

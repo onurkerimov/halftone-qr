@@ -81,6 +81,7 @@ export function HalftoneQrPreset({
       mainPresetSettings.fieldFirstColor,
       mainPresetSettings.fieldSecondColor,
       maxGeneratedFieldResolution,
+      mainPresetSettings.fieldBackgroundMode,
     );
     const renderResult = createRenderResult(
       matrices.qrBytes,

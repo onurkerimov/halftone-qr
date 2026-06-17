@@ -7,6 +7,7 @@ import {
   type ConnectorStyle,
   type DotShrinkage,
   type ErrorLevel,
+  type FieldBackgroundMode,
   type FieldContext,
   type JoinAlgorithm,
   type Point,
@@ -24,6 +25,7 @@ import {
   dotShrinkages,
   drawRenderResult,
   errorLevels,
+  fieldBackgroundModes,
   getQrMatrixCacheKey,
   joinAlgorithms,
   loadImage,
@@ -58,6 +60,7 @@ const verticalFieldPresetSettings: PresetSettings = {
   dotShrinkage: 2,
   errorLevel: "H",
   evolveAngleField: true,
+  fieldBackgroundMode: "contours",
   fieldFirstColor: "#d562a9",
   fieldSecondColor: "#5ba3d7",
   fillColor: "#000000",
@@ -73,6 +76,39 @@ const verticalFieldPresetSettings: PresetSettings = {
   qrDarkColor: "#ffffff",
   qrLightColor: "#000000",
   standaloneDotScale: 1.5,
+  strokeCap: "round",
+  syntheticPaddingData: true,
+  syntheticPaddingFieldCompliance: 100,
+  userSize: 5,
+};
+
+const ringsPresetSettings: PresetSettings = {
+  allowDiagonalJoins: true,
+  angleField: "rings",
+  angleFieldSpeed: 25,
+  backgroundImageHref: "",
+  backgroundPixelation: 163,
+  backgroundSource: "color",
+  connectorStyle: "paths",
+  dotShrinkage: 2,
+  errorLevel: "H",
+  evolveAngleField: true,
+  fieldBackgroundMode: "contours",
+  fieldFirstColor: "#000000",
+  fieldSecondColor: "#ffffff",
+  fillColor: "#000000",
+  isPlayingMasks: true,
+  joinAlgorithm: "fieldSnake",
+  maskPattern: 0,
+  maskPlaySpeed: 80,
+  mouseModulation: true,
+  mouseSmoothing: 0,
+  paddingModules: 5,
+  pathSmoothing: 100,
+  pathStrokeSize: 2,
+  qrDarkColor: "#ffffff",
+  qrLightColor: "#000000",
+  standaloneDotScale: 2,
   strokeCap: "round",
   syntheticPaddingData: true,
   syntheticPaddingFieldCompliance: 100,
@@ -100,6 +136,11 @@ export default function App() {
     "fieldSecondColor",
     mainPresetSettings.fieldSecondColor,
     parseFillColor,
+  );
+  const [fieldBackgroundMode, setFieldBackgroundMode] = useStoredState<FieldBackgroundMode>(
+    "fieldBackgroundMode",
+    mainPresetSettings.fieldBackgroundMode,
+    (value, fallback) => parseOption(fieldBackgroundModes, value, fallback),
   );
   const [backgroundSource, setBackgroundSource] = useStoredState<BackgroundSource>(
     "backgroundSource",
@@ -440,6 +481,7 @@ export default function App() {
       fieldFirstColor,
       fieldSecondColor,
       generatedFieldResolution,
+      fieldBackgroundMode,
     );
 
     if (generatedBackgroundHrefRef.current !== nextGeneratedBackgroundHref) {
@@ -450,6 +492,7 @@ export default function App() {
     angleField,
     backgroundSource,
     fieldFirstColor,
+    fieldBackgroundMode,
     fieldMouse,
     fieldPhase,
     fieldSecondColor,
@@ -587,6 +630,7 @@ export default function App() {
     dotShrinkage,
     errorLevel,
     evolveAngleField,
+    fieldBackgroundMode,
     fieldFirstColor,
     fieldSecondColor,
     fillColor,
@@ -616,6 +660,7 @@ export default function App() {
     setQrDarkColor(preset.qrDarkColor);
     setQrLightColor(preset.qrLightColor);
     setFieldFirstColor(preset.fieldFirstColor);
+    setFieldBackgroundMode(preset.fieldBackgroundMode);
     setFieldSecondColor(preset.fieldSecondColor);
     setBackgroundSource(preset.backgroundSource);
     setBackgroundImageHref(preset.backgroundImageHref);
@@ -646,6 +691,10 @@ export default function App() {
 
   const applyVerticalFieldPreset = () => {
     applyPresetSettings(verticalFieldPresetSettings);
+  };
+
+  const applyRingsPreset = () => {
+    applyPresetSettings(ringsPresetSettings);
   };
 
   const applySmoothPathsPreset = () => {
@@ -688,6 +737,7 @@ export default function App() {
         angleField={angleField}
         angleFieldSpeed={angleFieldSpeed}
         applyMainPreset={applyMainPreset}
+        applyRingsPreset={applyRingsPreset}
         applySavedPreset={applySavedPreset}
         applySmoothPathsPreset={applySmoothPathsPreset}
         applyVerticalFieldPreset={applyVerticalFieldPreset}
@@ -699,6 +749,7 @@ export default function App() {
         effectiveBackgroundPixelation={effectiveBackgroundPixelation}
         errorLevel={errorLevel}
         evolveAngleField={evolveAngleField}
+        fieldBackgroundMode={fieldBackgroundMode}
         fieldFirstColor={fieldFirstColor}
         fieldMouseRef={fieldMouseRef}
         fieldSecondColor={fieldSecondColor}
@@ -730,6 +781,7 @@ export default function App() {
         setDotShrinkage={setDotShrinkage}
         setErrorLevel={setErrorLevel}
         setEvolveAngleField={setEvolveAngleField}
+        setFieldBackgroundMode={setFieldBackgroundMode}
         setFieldFirstColor={setFieldFirstColor}
         setFieldMouse={setFieldMouse}
         setFieldSecondColor={setFieldSecondColor}

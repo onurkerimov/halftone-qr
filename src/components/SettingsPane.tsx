@@ -5,11 +5,13 @@ import {
   type ConnectorStyle,
   type DotShrinkage,
   type ErrorLevel,
+  type FieldBackgroundMode,
   type JoinAlgorithm,
   type Point,
   type PresetSettings,
   type QRMaskPattern,
   type StrokeCap,
+  getFieldVector,
   qrMaskPatterns,
 } from "../core";
 
@@ -25,6 +27,7 @@ type SettingsPaneProps = {
   angleField: AngleField;
   angleFieldSpeed: number;
   applyMainPreset: () => void;
+  applyRingsPreset: () => void;
   applySavedPreset: () => void;
   applySmoothPathsPreset: () => void;
   applyVerticalFieldPreset: () => void;
@@ -36,6 +39,7 @@ type SettingsPaneProps = {
   effectiveBackgroundPixelation: number;
   errorLevel: ErrorLevel;
   evolveAngleField: boolean;
+  fieldBackgroundMode: FieldBackgroundMode;
   fieldFirstColor: string;
   fieldMouseRef: MutableRef<Point | null>;
   fieldSecondColor: string;
@@ -67,6 +71,7 @@ type SettingsPaneProps = {
   setDotShrinkage: StateSetter<DotShrinkage>;
   setErrorLevel: StateSetter<ErrorLevel>;
   setEvolveAngleField: StateSetter<boolean>;
+  setFieldBackgroundMode: StateSetter<FieldBackgroundMode>;
   setFieldFirstColor: StateSetter<string>;
   setFieldMouse: StateSetter<Point | null>;
   setFieldSecondColor: StateSetter<string>;
@@ -97,12 +102,80 @@ type SettingsPaneProps = {
   userSize: number;
 };
 
+type AngleFieldOption = {
+  label: string;
+  value: AngleField;
+};
+
+const angleFieldOptions: AngleFieldOption[] = [
+  { label: "None", value: "none" },
+  { label: "Horizontal", value: "horizontal" },
+  { label: "Vertical", value: "vertical" },
+  { label: "Diagonal down", value: "diagonalDown" },
+  { label: "Diagonal up", value: "diagonalUp" },
+  { label: "Radial", value: "radial" },
+  { label: "Rings", value: "rings" },
+  { label: "Spiral", value: "spiral" },
+  { label: "Wavy", value: "wavy" },
+  { label: "Pinwheel", value: "pinwheel" },
+  { label: "Diamond", value: "diamond" },
+  { label: "Vortex", value: "vortex" },
+  { label: "Noise", value: "noise" },
+  { label: "Cross", value: "cross" },
+  { label: "Hourglass", value: "hourglass" },
+  { label: "Fan", value: "fan" },
+  { label: "Twist", value: "twist" },
+  { label: "Flow map", value: "flowMap" },
+];
+
+function AngleFieldPreview({ field, label }: { field: AngleField; label: string }) {
+  const sampleSize = 7;
+  const viewSize = 48;
+  const step = viewSize / sampleSize;
+  const halfLength = 2.8;
+  const samples = Array.from({ length: sampleSize * sampleSize }, (_, index) => {
+    const x = index % sampleSize;
+    const y = Math.floor(index / sampleSize);
+    const centerX = x * step + step / 2;
+    const centerY = y * step + step / 2;
+
+    if (field === "none") {
+      return <circle className="angle-field-dot" cx={centerX} cy={centerY} key={index} r="1" />;
+    }
+
+    const vector = getFieldVector(field, x, y, sampleSize, { mouse: null, phase: 0 });
+    const length = Math.hypot(vector.x, vector.y) || 1;
+    const unitX = vector.x / length;
+    const unitY = vector.y / length;
+
+    return (
+      <line
+        className="angle-field-vector"
+        key={index}
+        x1={centerX - unitX * halfLength}
+        x2={centerX + unitX * halfLength}
+        y1={centerY - unitY * halfLength}
+        y2={centerY + unitY * halfLength}
+      />
+    );
+  });
+
+  return (
+    <svg aria-hidden="true" className="angle-field-preview" focusable="false" viewBox={`0 0 ${viewSize} ${viewSize}`}>
+      <title>{label}</title>
+      <rect className="angle-field-preview-bg" height={viewSize} width={viewSize} x="0" y="0" />
+      {samples}
+    </svg>
+  );
+}
+
 export function SettingsPane({
   advancedOpen,
   allowDiagonalJoins,
   angleField,
   angleFieldSpeed,
   applyMainPreset,
+  applyRingsPreset,
   applySavedPreset,
   applySmoothPathsPreset,
   applyVerticalFieldPreset,
@@ -114,6 +187,7 @@ export function SettingsPane({
   effectiveBackgroundPixelation,
   errorLevel,
   evolveAngleField,
+  fieldBackgroundMode,
   fieldFirstColor,
   fieldMouseRef,
   fieldSecondColor,
@@ -145,6 +219,7 @@ export function SettingsPane({
   setDotShrinkage,
   setErrorLevel,
   setEvolveAngleField,
+  setFieldBackgroundMode,
   setFieldFirstColor,
   setFieldMouse,
   setFieldSecondColor,
@@ -174,6 +249,9 @@ export function SettingsPane({
   text,
   userSize,
 }: SettingsPaneProps) {
+  const selectedAngleFieldLabel =
+    angleFieldOptions.find((option) => option.value === angleField)?.label ?? "Custom field";
+
   return (
     <aside className="settings-pane">
       <header className="app-header">
@@ -206,30 +284,36 @@ export function SettingsPane({
               <button className="ui-button secondary" onClick={applyVerticalFieldPreset} type="button">
                 Vertical field
               </button>
+              <button className="ui-button secondary" onClick={applyRingsPreset} type="button">
+                Rings field
+              </button>
             </div>
           </div>
 
           <div className="field">
-            <label className="field-label" htmlFor="angleField">
+            <span className="field-label" id="angleFieldLabel">
               Angle field
-            </label>
-            <select
-              className="ui-select"
-              id="angleField"
-              onChange={(event) => setAngleField(event.target.value as AngleField)}
-              value={angleField}
-            >
-              <option value="none">None</option>
-              <option value="horizontal">Horizontal</option>
-              <option value="vertical">Vertical</option>
-              <option value="diagonalDown">Diagonal down</option>
-              <option value="diagonalUp">Diagonal up</option>
-              <option value="radial">Radial</option>
-              <option value="rings">Rings</option>
-              <option value="spiral">Spiral</option>
-              <option value="wavy">Wavy</option>
-              <option value="pinwheel">Pinwheel</option>
-            </select>
+            </span>
+            <div aria-labelledby="angleFieldLabel" className="angle-field-grid" role="radiogroup">
+              {angleFieldOptions.map((option) => (
+                <label className="angle-field-choice" htmlFor={`angleField-${option.value}`} key={option.value}>
+                  <input
+                    checked={angleField === option.value}
+                    className="angle-field-input sr-only"
+                    id={`angleField-${option.value}`}
+                    name="angleField"
+                    onChange={() => setAngleField(option.value)}
+                    type="radio"
+                    value={option.value}
+                  />
+                  <span className="angle-field-option" title={option.label}>
+                    <AngleFieldPreview field={option.value} label={option.label} />
+                    <span className="sr-only">{option.label}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <span className="angle-field-selected">Selected: {selectedAngleFieldLabel}</span>
             <span className="field-hint">Used by Field snake to bias non-forking paths by local direction.</span>
           </div>
         </section>
@@ -377,6 +461,20 @@ export function SettingsPane({
               <option value="field">Generated angle field</option>
             </select>
           </div>
+
+          <label className="switch-row" htmlFor="fieldBackgroundMode">
+            <span>
+              <span className="field-label">Legacy field background</span>
+              <span className="field-hint">Uses the previous normal-projection field image.</span>
+            </span>
+            <input
+              checked={fieldBackgroundMode === "normal"}
+              className="switch-input"
+              id="fieldBackgroundMode"
+              onChange={(event) => setFieldBackgroundMode(event.target.checked ? "normal" : "contours")}
+              type="checkbox"
+            />
+          </label>
 
           <div className="field">
             <label className="field-label" htmlFor="backgroundImage">

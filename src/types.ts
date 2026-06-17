@@ -6,6 +6,8 @@ export type ConnectorStyle = "dots" | "paths";
 
 export type BackgroundSource = "color" | "uploaded" | "field";
 
+export type FieldBackgroundMode = "contours" | "normal";
+
 export type QRMaskPattern = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export type StrokeCap = "square" | "round";
@@ -29,7 +31,15 @@ export type AngleField =
   | "rings"
   | "spiral"
   | "wavy"
-  | "pinwheel";
+  | "pinwheel"
+  | "diamond"
+  | "vortex"
+  | "noise"
+  | "cross"
+  | "hourglass"
+  | "fan"
+  | "twist"
+  | "flowMap";
 
 export type QRCell = boolean | null;
 
@@ -108,6 +118,7 @@ export type PresetSettings = {
   dotShrinkage: DotShrinkage;
   errorLevel: ErrorLevel;
   evolveAngleField: boolean;
+  fieldBackgroundMode: FieldBackgroundMode;
   fieldFirstColor: string;
   fieldSecondColor: string;
   fillColor: string;
