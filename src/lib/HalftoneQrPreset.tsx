@@ -28,7 +28,7 @@ function createPresetMatrices(value: string, maskPattern: QRMaskPattern) {
 }
 
 export function HalftoneQrPreset({
-  ariaLabel = "Animated halftone QR code",
+  ariaLabel = "Animated QR code",
   className,
   paused = false,
   style,

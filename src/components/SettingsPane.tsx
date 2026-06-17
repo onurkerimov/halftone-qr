@@ -27,6 +27,7 @@ type SettingsPaneProps = {
   applyMainPreset: () => void;
   applySavedPreset: () => void;
   applySmoothPathsPreset: () => void;
+  applyVerticalFieldPreset: () => void;
   backgroundImageHref: string;
   backgroundResolutionMax: number;
   backgroundSource: BackgroundSource;
@@ -104,6 +105,7 @@ export function SettingsPane({
   applyMainPreset,
   applySavedPreset,
   applySmoothPathsPreset,
+  applyVerticalFieldPreset,
   backgroundImageHref,
   backgroundResolutionMax,
   backgroundSource,
@@ -175,8 +177,8 @@ export function SettingsPane({
   return (
     <aside className="settings-pane">
       <header className="app-header">
-        <p className="eyebrow">Halftone QR</p>
-        <h1>Shape the code.</h1>
+        <p className="eyebrow">QR Generator</p>
+        <p className="field-hint header-copy">Black canvas, sharp edges, precise output.</p>
       </header>
 
       <form className="settings-scroll" onSubmit={(event) => event.preventDefault()}>
@@ -194,6 +196,42 @@ export function SettingsPane({
               value={text}
             />
           </div>
+
+          <div className="field">
+            <span className="field-label">Presets</span>
+            <div className="preset-row">
+              <button className="ui-button" onClick={applyMainPreset} type="button">
+                Default preset
+              </button>
+              <button className="ui-button secondary" onClick={applyVerticalFieldPreset} type="button">
+                Vertical field
+              </button>
+            </div>
+          </div>
+
+          <div className="field">
+            <label className="field-label" htmlFor="angleField">
+              Angle field
+            </label>
+            <select
+              className="ui-select"
+              id="angleField"
+              onChange={(event) => setAngleField(event.target.value as AngleField)}
+              value={angleField}
+            >
+              <option value="none">None</option>
+              <option value="horizontal">Horizontal</option>
+              <option value="vertical">Vertical</option>
+              <option value="diagonalDown">Diagonal down</option>
+              <option value="diagonalUp">Diagonal up</option>
+              <option value="radial">Radial</option>
+              <option value="rings">Rings</option>
+              <option value="spiral">Spiral</option>
+              <option value="wavy">Wavy</option>
+              <option value="pinwheel">Pinwheel</option>
+            </select>
+            <span className="field-hint">Used by Field snake to bias non-forking paths by local direction.</span>
+          </div>
         </section>
 
         <section className="settings-section advanced-section">
@@ -205,7 +243,7 @@ export function SettingsPane({
           >
             <span>
               <span className="field-label">Advanced</span>
-              <span className="field-hint">Presets, colors, path behavior, masks, and QR version.</span>
+              <span className="field-hint">Colors, path behavior, masks, and QR version.</span>
             </span>
             <span aria-hidden="true" className="advanced-chevron">
               {advancedOpen ? "-" : "+"}
@@ -215,11 +253,8 @@ export function SettingsPane({
           {advancedOpen ? (
             <div className="advanced-content">
               <div className="field">
-                <span className="field-label">Presets</span>
+                <span className="field-label">Preset tools</span>
                 <div className="preset-row">
-                  <button className="ui-button" onClick={applyMainPreset} type="button">
-                    Main preset
-                  </button>
                   <button className="ui-button secondary" onClick={applySmoothPathsPreset} type="button">
                     Smooth paths
                   </button>
@@ -448,30 +483,6 @@ export function SettingsPane({
               <option value="mazeSnake">Maze snake</option>
               <option value="fieldSnake">Field snake</option>
             </select>
-          </div>
-
-          <div className="field">
-            <label className="field-label" htmlFor="angleField">
-              Angle field
-            </label>
-            <select
-              className="ui-select"
-              id="angleField"
-              onChange={(event) => setAngleField(event.target.value as AngleField)}
-              value={angleField}
-            >
-              <option value="none">None</option>
-              <option value="horizontal">Horizontal</option>
-              <option value="vertical">Vertical</option>
-              <option value="diagonalDown">Diagonal down</option>
-              <option value="diagonalUp">Diagonal up</option>
-              <option value="radial">Radial</option>
-              <option value="rings">Rings</option>
-              <option value="spiral">Spiral</option>
-              <option value="wavy">Wavy</option>
-              <option value="pinwheel">Pinwheel</option>
-            </select>
-            <span className="field-hint">Used by Field snake to bias non-forking paths by local direction.</span>
           </div>
 
           <label className="switch-row" htmlFor="evolveAngleField">

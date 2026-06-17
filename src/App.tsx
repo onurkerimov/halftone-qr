@@ -47,6 +47,38 @@ import {
   useStoredState,
 } from "./core";
 
+const verticalFieldPresetSettings: PresetSettings = {
+  allowDiagonalJoins: true,
+  angleField: "vertical",
+  angleFieldSpeed: 30,
+  backgroundImageHref: "",
+  backgroundPixelation: 90,
+  backgroundSource: "field",
+  connectorStyle: "paths",
+  dotShrinkage: 2,
+  errorLevel: "H",
+  evolveAngleField: true,
+  fieldFirstColor: "#d562a9",
+  fieldSecondColor: "#5ba3d7",
+  fillColor: "#000000",
+  isPlayingMasks: true,
+  joinAlgorithm: "fieldSnake",
+  maskPattern: 2,
+  maskPlaySpeed: 65,
+  mouseModulation: true,
+  mouseSmoothing: 0,
+  paddingModules: 4,
+  pathSmoothing: 60,
+  pathStrokeSize: 2.65,
+  qrDarkColor: "#ffffff",
+  qrLightColor: "#000000",
+  standaloneDotScale: 1.5,
+  strokeCap: "round",
+  syntheticPaddingData: true,
+  syntheticPaddingFieldCompliance: 100,
+  userSize: 5,
+};
+
 export default function App() {
   const [text, setText] = useStoredState("text", "https://nity.ch", parseString);
   const [debouncedText, setDebouncedText] = useState(text);
@@ -612,6 +644,10 @@ export default function App() {
     applyPresetSettings(mainPresetSettings);
   };
 
+  const applyVerticalFieldPreset = () => {
+    applyPresetSettings(verticalFieldPresetSettings);
+  };
+
   const applySmoothPathsPreset = () => {
     setConnectorStyle("paths");
     setStrokeCap("round");
@@ -654,6 +690,7 @@ export default function App() {
         applyMainPreset={applyMainPreset}
         applySavedPreset={applySavedPreset}
         applySmoothPathsPreset={applySmoothPathsPreset}
+        applyVerticalFieldPreset={applyVerticalFieldPreset}
         backgroundImageHref={backgroundImageHref}
         backgroundResolutionMax={backgroundResolutionMax}
         backgroundSource={backgroundSource}

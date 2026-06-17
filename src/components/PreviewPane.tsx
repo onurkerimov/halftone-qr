@@ -17,11 +17,9 @@ export function PreviewPane({
 }: PreviewPaneProps) {
   return (
     <main className="preview-pane">
-      <div className="preview-toolbar">
-        <div>
-          <p className="eyebrow">Preview</p>
-          <h2>Export-ready QR</h2>
-        </div>
+      <header className="preview-toolbar">
+        <p className="eyebrow">Preview</p>
+        <p className="field-hint preview-copy">Live canvas with PNG and SVG output.</p>
         <div className="download-actions">
           <a className="ui-button secondary" download="qr_code.svg" href={svgHref}>
             SVG
@@ -30,18 +28,16 @@ export function PreviewPane({
             PNG
           </a>
         </div>
-      </div>
+      </header>
 
-      <div className="preview-stage">
-        <canvas
-          aria-label="Generated QR code preview"
-          className="qr-canvas"
-          id="output"
-          onPointerLeave={handlePreviewPointerLeave}
-          onPointerMove={handlePreviewPointerMove}
-          ref={outputRef}
-        />
-      </div>
+      <canvas
+        aria-label="Generated QR code preview"
+        className="qr-canvas"
+        id="output"
+        onPointerLeave={handlePreviewPointerLeave}
+        onPointerMove={handlePreviewPointerMove}
+        ref={outputRef}
+      />
     </main>
   );
 }
