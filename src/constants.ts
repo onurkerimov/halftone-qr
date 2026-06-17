@@ -83,6 +83,7 @@ export const mainPresetSettings: PresetSettings = {
   evolveAngleField: true,
   fieldBackgroundChaos: 35,
   fieldBackgroundDensity: 200,
+  fieldBackgroundDominance: 50,
   fieldBackgroundMode: "contours",
   fieldFirstColor: "#d562a9",
   fieldSecondColor: "#5ba3d7",

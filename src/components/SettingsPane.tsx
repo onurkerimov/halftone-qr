@@ -26,6 +26,7 @@ type SettingsPaneProps = {
   allowDiagonalJoins: boolean;
   angleField: AngleField;
   angleFieldSpeed: number;
+  applyDenseRingsPreset: () => void;
   applyMainPreset: () => void;
   applyRingsPreset: () => void;
   applySavedPreset: () => void;
@@ -41,6 +42,7 @@ type SettingsPaneProps = {
   evolveAngleField: boolean;
   fieldBackgroundChaos: number;
   fieldBackgroundDensity: number;
+  fieldBackgroundDominance: number;
   fieldBackgroundMode: FieldBackgroundMode;
   fieldFirstColor: string;
   fieldMouseRef: MutableRef<Point | null>;
@@ -75,6 +77,7 @@ type SettingsPaneProps = {
   setEvolveAngleField: StateSetter<boolean>;
   setFieldBackgroundChaos: StateSetter<number>;
   setFieldBackgroundDensity: StateSetter<number>;
+  setFieldBackgroundDominance: StateSetter<number>;
   setFieldBackgroundMode: StateSetter<FieldBackgroundMode>;
   setFieldFirstColor: StateSetter<string>;
   setFieldMouse: StateSetter<Point | null>;
@@ -178,6 +181,7 @@ export function SettingsPane({
   allowDiagonalJoins,
   angleField,
   angleFieldSpeed,
+  applyDenseRingsPreset,
   applyMainPreset,
   applyRingsPreset,
   applySavedPreset,
@@ -193,6 +197,7 @@ export function SettingsPane({
   evolveAngleField,
   fieldBackgroundChaos,
   fieldBackgroundDensity,
+  fieldBackgroundDominance,
   fieldBackgroundMode,
   fieldFirstColor,
   fieldMouseRef,
@@ -227,6 +232,7 @@ export function SettingsPane({
   setEvolveAngleField,
   setFieldBackgroundChaos,
   setFieldBackgroundDensity,
+  setFieldBackgroundDominance,
   setFieldBackgroundMode,
   setFieldFirstColor,
   setFieldMouse,
@@ -294,6 +300,9 @@ export function SettingsPane({
               </button>
               <button className="ui-button secondary" onClick={applyRingsPreset} type="button">
                 Rings field
+              </button>
+              <button className="ui-button secondary" onClick={applyDenseRingsPreset} type="button">
+                Dense rings field
               </button>
             </div>
           </div>
@@ -451,6 +460,26 @@ export function SettingsPane({
                         />
                         <span className="field-hint">
                           Adds organic swirl and imperfect contour wobble when legacy mode is off.
+                        </span>
+                      </div>
+
+                      <div className="field">
+                        <label className="field-label range-label" htmlFor="fieldBackgroundDominance">
+                          <span>Field stripe A dominance</span>
+                          <span>{Math.round(fieldBackgroundDominance)}%</span>
+                        </label>
+                        <input
+                          className="ui-range"
+                          id="fieldBackgroundDominance"
+                          max="100"
+                          min="0"
+                          onChange={(event) => setFieldBackgroundDominance(Number.parseInt(event.target.value, 10))}
+                          step="1"
+                          type="range"
+                          value={fieldBackgroundDominance}
+                        />
+                        <span className="field-hint">
+                          50% is balanced. Higher values favor stripe A; lower values favor stripe B.
                         </span>
                       </div>
                     </>

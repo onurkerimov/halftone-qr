@@ -63,6 +63,7 @@ const verticalFieldPresetSettings: PresetSettings = {
   evolveAngleField: true,
   fieldBackgroundChaos: 35,
   fieldBackgroundDensity: 200,
+  fieldBackgroundDominance: 50,
   fieldBackgroundMode: "contours",
   fieldFirstColor: "#d562a9",
   fieldSecondColor: "#5ba3d7",
@@ -98,6 +99,43 @@ const ringsPresetSettings: PresetSettings = {
   evolveAngleField: true,
   fieldBackgroundChaos: 45,
   fieldBackgroundDensity: 280,
+  fieldBackgroundDominance: 50,
+  fieldBackgroundMode: "contours",
+  fieldFirstColor: "#000000",
+  fieldSecondColor: "#ffffff",
+  fillColor: "#000000",
+  isPlayingMasks: true,
+  joinAlgorithm: "fieldSnake",
+  maskPattern: 2,
+  maskPlaySpeed: 80,
+  mouseModulation: true,
+  mouseSmoothing: 0,
+  paddingModules: 5,
+  pathSmoothing: 100,
+  pathStrokeSize: 2,
+  qrDarkColor: "#ffffff",
+  qrLightColor: "#000000",
+  standaloneDotScale: 2,
+  strokeCap: "round",
+  syntheticPaddingData: true,
+  syntheticPaddingFieldCompliance: 100,
+  userSize: 5,
+};
+
+const denseRingsPresetSettings: PresetSettings = {
+  allowDiagonalJoins: true,
+  angleField: "rings",
+  angleFieldSpeed: 0,
+  backgroundImageHref: "",
+  backgroundPixelation: 32,
+  backgroundSource: "field",
+  connectorStyle: "dots",
+  dotShrinkage: 2,
+  errorLevel: "H",
+  evolveAngleField: true,
+  fieldBackgroundChaos: 55,
+  fieldBackgroundDensity: 460,
+  fieldBackgroundDominance: 83,
   fieldBackgroundMode: "contours",
   fieldFirstColor: "#000000",
   fieldSecondColor: "#ffffff",
@@ -150,6 +188,11 @@ export default function App() {
   const [fieldBackgroundChaos, setFieldBackgroundChaos] = useStoredState(
     "fieldBackgroundChaos",
     mainPresetSettings.fieldBackgroundChaos,
+    parsePercentage,
+  );
+  const [fieldBackgroundDominance, setFieldBackgroundDominance] = useStoredState(
+    "fieldBackgroundDominance",
+    mainPresetSettings.fieldBackgroundDominance,
     parsePercentage,
   );
   const [fieldBackgroundMode, setFieldBackgroundMode] = useStoredState<FieldBackgroundMode>(
@@ -499,6 +542,7 @@ export default function App() {
       fieldBackgroundMode,
       fieldBackgroundDensity,
       fieldBackgroundChaos,
+      fieldBackgroundDominance,
     );
 
     if (generatedBackgroundHrefRef.current !== nextGeneratedBackgroundHref) {
@@ -510,6 +554,7 @@ export default function App() {
     backgroundSource,
     fieldBackgroundChaos,
     fieldBackgroundDensity,
+    fieldBackgroundDominance,
     fieldFirstColor,
     fieldBackgroundMode,
     fieldMouse,
@@ -651,6 +696,7 @@ export default function App() {
     evolveAngleField,
     fieldBackgroundChaos,
     fieldBackgroundDensity,
+    fieldBackgroundDominance,
     fieldBackgroundMode,
     fieldFirstColor,
     fieldSecondColor,
@@ -682,6 +728,7 @@ export default function App() {
     setQrLightColor(preset.qrLightColor);
     setFieldBackgroundChaos(preset.fieldBackgroundChaos);
     setFieldBackgroundDensity(preset.fieldBackgroundDensity);
+    setFieldBackgroundDominance(preset.fieldBackgroundDominance);
     setFieldFirstColor(preset.fieldFirstColor);
     setFieldBackgroundMode(preset.fieldBackgroundMode);
     setFieldSecondColor(preset.fieldSecondColor);
@@ -718,6 +765,10 @@ export default function App() {
 
   const applyRingsPreset = () => {
     applyPresetSettings(ringsPresetSettings);
+  };
+
+  const applyDenseRingsPreset = () => {
+    applyPresetSettings(denseRingsPresetSettings);
   };
 
   const applySmoothPathsPreset = () => {
@@ -759,6 +810,7 @@ export default function App() {
         allowDiagonalJoins={allowDiagonalJoins}
         angleField={angleField}
         angleFieldSpeed={angleFieldSpeed}
+        applyDenseRingsPreset={applyDenseRingsPreset}
         applyMainPreset={applyMainPreset}
         applyRingsPreset={applyRingsPreset}
         applySavedPreset={applySavedPreset}
@@ -774,6 +826,7 @@ export default function App() {
         evolveAngleField={evolveAngleField}
         fieldBackgroundChaos={fieldBackgroundChaos}
         fieldBackgroundDensity={fieldBackgroundDensity}
+        fieldBackgroundDominance={fieldBackgroundDominance}
         fieldBackgroundMode={fieldBackgroundMode}
         fieldFirstColor={fieldFirstColor}
         fieldMouseRef={fieldMouseRef}
@@ -808,6 +861,7 @@ export default function App() {
         setEvolveAngleField={setEvolveAngleField}
         setFieldBackgroundChaos={setFieldBackgroundChaos}
         setFieldBackgroundDensity={setFieldBackgroundDensity}
+        setFieldBackgroundDominance={setFieldBackgroundDominance}
         setFieldBackgroundMode={setFieldBackgroundMode}
         setFieldFirstColor={setFieldFirstColor}
         setFieldMouse={setFieldMouse}

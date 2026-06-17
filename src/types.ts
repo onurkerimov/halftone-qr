@@ -120,6 +120,7 @@ export type PresetSettings = {
   evolveAngleField: boolean;
   fieldBackgroundChaos: number;
   fieldBackgroundDensity: number;
+  fieldBackgroundDominance: number;
   fieldBackgroundMode: FieldBackgroundMode;
   fieldFirstColor: string;
   fieldSecondColor: string;

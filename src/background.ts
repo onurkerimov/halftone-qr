@@ -234,6 +234,13 @@ function getNormalFieldBackgroundPhase(
   return (x * normalX + y * normalY) * 0.08 + fieldContext.phase * 1.8;
 }
 
+function getStripeColor(fieldPhase: number, firstStripe: [number, number, number], secondStripe: [number, number, number], fieldBackgroundDominance: number) {
+  const firstStripeShare = clamp(fieldBackgroundDominance, 0, 100) / 100;
+  const threshold = Math.sin((0.5 - firstStripeShare) * Math.PI);
+
+  return Math.sin(fieldPhase) >= threshold ? firstStripe : secondStripe;
+}
+
 export function createGeneratedFieldBackground(
   angleField: AngleField,
   fieldContext: FieldContext,
@@ -243,6 +250,7 @@ export function createGeneratedFieldBackground(
   fieldBackgroundMode: FieldBackgroundMode = "contours",
   fieldBackgroundDensity = 200,
   fieldBackgroundChaos = 35,
+  fieldBackgroundDominance = 50,
 ): string {
   return createGeneratedFieldBackgroundCanvas(
     angleField,
@@ -253,6 +261,7 @@ export function createGeneratedFieldBackground(
     fieldBackgroundMode,
     fieldBackgroundDensity,
     fieldBackgroundChaos,
+    fieldBackgroundDominance,
   ).toDataURL("image/png");
 }
 
@@ -265,6 +274,7 @@ export function createGeneratedFieldBackgroundCanvas(
   fieldBackgroundMode: FieldBackgroundMode = "contours",
   fieldBackgroundDensity = 200,
   fieldBackgroundChaos = 35,
+  fieldBackgroundDominance = 50,
 ): HTMLCanvasElement {
   const requestedSize = sourceResolution > 0 ? sourceResolution : maxGeneratedFieldResolution;
   const size = clamp(Math.round(requestedSize), 1, maxGeneratedFieldResolution);
@@ -289,7 +299,7 @@ export function createGeneratedFieldBackgroundCanvas(
               fieldBackgroundDensity,
               fieldBackgroundChaos,
             );
-      const stripe = Math.sin(fieldPhase) >= 0 ? firstStripe : secondStripe;
+      const stripe = getStripeColor(fieldPhase, firstStripe, secondStripe, fieldBackgroundDominance);
       const index = (y * size + x) * 4;
 
       data[index] = stripe[0];

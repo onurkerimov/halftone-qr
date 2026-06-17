@@ -92,6 +92,10 @@ export function parsePresetSettings(value: unknown, fallback: PresetSettings | n
       value.fieldBackgroundDensity,
       mainPresetSettings.fieldBackgroundDensity,
     ),
+    fieldBackgroundDominance: parsePercentage(
+      value.fieldBackgroundDominance,
+      mainPresetSettings.fieldBackgroundDominance,
+    ),
     fieldBackgroundMode: parseOption(
       fieldBackgroundModes,
       value.fieldBackgroundMode,
