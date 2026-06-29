@@ -26,6 +26,7 @@ type SettingsPaneProps = {
   allowDiagonalJoins: boolean;
   angleField: AngleField;
   angleFieldSpeed: number;
+  applyDenseRingsPathsPreset: () => void;
   applyDenseRingsPreset: () => void;
   applyMainPreset: () => void;
   applyRingsPreset: () => void;
@@ -181,6 +182,7 @@ export function SettingsPane({
   allowDiagonalJoins,
   angleField,
   angleFieldSpeed,
+  applyDenseRingsPathsPreset,
   applyDenseRingsPreset,
   applyMainPreset,
   applyRingsPreset,
@@ -303,6 +305,9 @@ export function SettingsPane({
               </button>
               <button className="ui-button secondary" onClick={applyDenseRingsPreset} type="button">
                 Dense rings field
+              </button>
+              <button className="ui-button secondary" onClick={applyDenseRingsPathsPreset} type="button">
+                Dense rings paths
               </button>
             </div>
           </div>

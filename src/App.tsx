@@ -159,6 +159,42 @@ const denseRingsPresetSettings: PresetSettings = {
   userSize: 5,
 };
 
+const denseRingsPathsPresetSettings: PresetSettings = {
+  allowDiagonalJoins: true,
+  angleField: "rings",
+  angleFieldSpeed: 0,
+  backgroundImageHref: "",
+  backgroundPixelation: 32,
+  backgroundSource: "color",
+  connectorStyle: "paths",
+  dotShrinkage: 2,
+  errorLevel: "H",
+  evolveAngleField: true,
+  fieldBackgroundChaos: 55,
+  fieldBackgroundDensity: 460,
+  fieldBackgroundDominance: 83,
+  fieldBackgroundMode: "contours",
+  fieldFirstColor: "#000000",
+  fieldSecondColor: "#ffffff",
+  fillColor: "#000000",
+  isPlayingMasks: true,
+  joinAlgorithm: "fieldSnake",
+  maskPattern: 1,
+  maskPlaySpeed: 80,
+  mouseModulation: true,
+  mouseSmoothing: 0,
+  paddingModules: 4,
+  pathSmoothing: 100,
+  pathStrokeSize: 2,
+  qrDarkColor: "#ffffff",
+  qrLightColor: "#000000",
+  standaloneDotScale: 2,
+  strokeCap: "round",
+  syntheticPaddingData: true,
+  syntheticPaddingFieldCompliance: 100,
+  userSize: 6,
+};
+
 export default function App() {
   const [text, setText] = useStoredState("text", "https://nity.ch", parseString);
   const [debouncedText, setDebouncedText] = useState(text);
@@ -772,6 +808,10 @@ export default function App() {
     applyPresetSettings(denseRingsPresetSettings);
   };
 
+  const applyDenseRingsPathsPreset = () => {
+    applyPresetSettings(denseRingsPathsPresetSettings);
+  };
+
   const applySmoothPathsPreset = () => {
     setConnectorStyle("paths");
     setStrokeCap("round");
@@ -812,6 +852,7 @@ export default function App() {
         allowDiagonalJoins={allowDiagonalJoins}
         angleField={angleField}
         angleFieldSpeed={angleFieldSpeed}
+        applyDenseRingsPathsPreset={applyDenseRingsPathsPreset}
         applyDenseRingsPreset={applyDenseRingsPreset}
         applyMainPreset={applyMainPreset}
         applyRingsPreset={applyRingsPreset}
