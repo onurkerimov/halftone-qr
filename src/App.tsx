@@ -1,6 +1,7 @@
 import { type ChangeEvent, type PointerEvent, useCallback, useEffect, useRef, useState } from "react";
 import { PreviewPane } from "./components/PreviewPane";
 import { SettingsPane } from "./components/SettingsPane";
+import { createEmbedHref } from "./embed-state";
 import {
   type AngleField,
   type BackgroundSource,
@@ -802,6 +803,7 @@ export default function App() {
       });
     }
   };
+  const embedHref = createEmbedHref(text, getCurrentPresetSettings());
 
   return (
     <div className="app-shell">
@@ -894,6 +896,7 @@ export default function App() {
       />
 
       <PreviewPane
+        embedHref={embedHref}
         handlePreviewPointerLeave={handlePreviewPointerLeave}
         handlePreviewPointerMove={handlePreviewPointerMove}
         outputRef={outputRef}

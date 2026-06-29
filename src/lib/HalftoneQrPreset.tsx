@@ -1,24 +1,26 @@
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
-import { createGeneratedFieldBackgroundCanvas } from "../background";
+import { createGeneratedFieldBackgroundCanvas, loadImage } from "../background";
 import { mainPresetSettings, maxGeneratedFieldResolution } from "../constants";
 import { createQrMatrices } from "../qr-code";
 import { createRenderResult, drawRenderResult } from "../rendering";
-import type { FieldContext, QRMaskPattern } from "../types";
+import type { FieldContext, PresetSettings, QRMaskPattern } from "../types";
 
 export type HalftoneQrPresetProps = {
   ariaLabel?: string;
   className?: string;
   paused?: boolean;
+  settings?: PresetSettings;
   style?: CSSProperties;
   value: string;
 };
 
-function createPresetMatrices(value: string, maskPattern: QRMaskPattern) {
+function createPresetMatrices(value: string, maskPattern: QRMaskPattern, settings: PresetSettings) {
   let lastError: unknown = null;
+  const firstSize = settings.userSize === 0 ? 1 : settings.userSize;
 
-  for (let qrSize = mainPresetSettings.userSize; qrSize <= 10; qrSize += 1) {
+  for (let qrSize = firstSize; qrSize <= 10; qrSize += 1) {
     try {
-      return createQrMatrices(qrSize, mainPresetSettings.errorLevel, value, maskPattern);
+      return createQrMatrices(qrSize, settings.errorLevel, value, maskPattern);
     } catch (error) {
       lastError = error;
     }
@@ -31,38 +33,75 @@ export function HalftoneQrPreset({
   ariaLabel = "Animated QR code",
   className,
   paused = false,
+  settings = mainPresetSettings,
   style,
   value,
 }: HalftoneQrPresetProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const backgroundImageRef = useRef<HTMLImageElement | null>(null);
   const [phase, setPhase] = useState(0);
-  const [maskPattern, setMaskPattern] = useState<QRMaskPattern>(mainPresetSettings.maskPattern);
-  const matrices = useMemo(() => createPresetMatrices(value, maskPattern), [maskPattern, value]);
+  const [backgroundImageVersion, setBackgroundImageVersion] = useState(0);
+  const [maskPattern, setMaskPattern] = useState<QRMaskPattern>(settings.maskPattern);
+  const matrices = useMemo(() => createPresetMatrices(value, maskPattern, settings), [maskPattern, settings, value]);
 
   useEffect(() => {
-    if (paused || !mainPresetSettings.evolveAngleField) {
+    setMaskPattern(settings.maskPattern);
+  }, [settings.maskPattern]);
+
+  useEffect(() => {
+    if (paused || !settings.evolveAngleField) {
       return;
     }
 
     const interval = window.setInterval(() => {
-      setPhase((currentPhase) => (currentPhase + 0.2 * (mainPresetSettings.angleFieldSpeed / 100)) % (Math.PI * 2));
+      setPhase((currentPhase) => (currentPhase + 0.2 * (settings.angleFieldSpeed / 100)) % (Math.PI * 2));
     }, 80);
 
     return () => window.clearInterval(interval);
-  }, [paused]);
+  }, [paused, settings.angleFieldSpeed, settings.evolveAngleField]);
 
   useEffect(() => {
-    if (paused || !mainPresetSettings.isPlayingMasks || mainPresetSettings.maskPlaySpeed <= 0) {
+    if (paused || !settings.isPlayingMasks || settings.maskPlaySpeed <= 0) {
       return;
     }
 
-    const intervalMs = Math.max(20, Math.round(100 / (mainPresetSettings.maskPlaySpeed / 100)));
+    const intervalMs = Math.max(20, Math.round(100 / (settings.maskPlaySpeed / 100)));
     const interval = window.setInterval(() => {
       setMaskPattern((currentPattern) => (((currentPattern + 1) % 8) as QRMaskPattern));
     }, intervalMs);
 
     return () => window.clearInterval(interval);
-  }, [paused]);
+  }, [paused, settings.isPlayingMasks, settings.maskPlaySpeed]);
+
+  useEffect(() => {
+    if (settings.backgroundSource !== "uploaded" || !settings.backgroundImageHref) {
+      if (backgroundImageRef.current) {
+        backgroundImageRef.current = null;
+        setBackgroundImageVersion((version) => version + 1);
+      }
+      return;
+    }
+
+    let cancelled = false;
+
+    loadImage(settings.backgroundImageHref)
+      .then((image) => {
+        if (!cancelled) {
+          backgroundImageRef.current = image;
+          setBackgroundImageVersion((version) => version + 1);
+        }
+      })
+      .catch(() => {
+        if (!cancelled && backgroundImageRef.current) {
+          backgroundImageRef.current = null;
+          setBackgroundImageVersion((version) => version + 1);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [settings.backgroundImageHref, settings.backgroundSource]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -76,44 +115,56 @@ export function HalftoneQrPreset({
       phase,
     };
     const backgroundCanvas = createGeneratedFieldBackgroundCanvas(
-      mainPresetSettings.angleField,
+      settings.angleField,
       fieldContext,
-      mainPresetSettings.fieldFirstColor,
-      mainPresetSettings.fieldSecondColor,
+      settings.fieldFirstColor,
+      settings.fieldSecondColor,
       maxGeneratedFieldResolution,
-      mainPresetSettings.fieldBackgroundMode,
-      mainPresetSettings.fieldBackgroundDensity,
-      mainPresetSettings.fieldBackgroundChaos,
-      mainPresetSettings.fieldBackgroundDominance,
+      settings.fieldBackgroundMode,
+      settings.fieldBackgroundDensity,
+      settings.fieldBackgroundChaos,
+      settings.fieldBackgroundDominance,
     );
+    const backgroundImage =
+      settings.backgroundSource === "field"
+        ? backgroundCanvas
+        : settings.backgroundSource === "uploaded"
+          ? backgroundImageRef.current
+          : null;
+    const backgroundImageHref =
+      settings.backgroundSource === "field"
+        ? "generated-field"
+        : settings.backgroundSource === "uploaded"
+          ? settings.backgroundImageHref
+          : "";
     const renderResult = createRenderResult(
       matrices.qrBytes,
       matrices.controlBytes,
-      mainPresetSettings.dotShrinkage,
-      mainPresetSettings.fillColor,
-      mainPresetSettings.qrDarkColor,
-      mainPresetSettings.qrLightColor,
-      "generated-field",
-      backgroundCanvas,
-      mainPresetSettings.backgroundSource,
-      mainPresetSettings.backgroundPixelation,
-      mainPresetSettings.joinAlgorithm,
-      mainPresetSettings.allowDiagonalJoins,
-      mainPresetSettings.angleField,
+      settings.dotShrinkage,
+      settings.fillColor,
+      settings.qrDarkColor,
+      settings.qrLightColor,
+      backgroundImageHref,
+      backgroundImage,
+      settings.backgroundSource,
+      settings.backgroundPixelation,
+      settings.joinAlgorithm,
+      settings.allowDiagonalJoins,
+      settings.angleField,
       fieldContext,
-      mainPresetSettings.connectorStyle,
-      mainPresetSettings.pathStrokeSize,
-      mainPresetSettings.pathSmoothing,
-      mainPresetSettings.standaloneDotScale,
-      mainPresetSettings.strokeCap,
-      mainPresetSettings.paddingModules,
-      mainPresetSettings.syntheticPaddingData,
-      mainPresetSettings.syntheticPaddingFieldCompliance,
+      settings.connectorStyle,
+      settings.pathStrokeSize,
+      settings.pathSmoothing,
+      settings.standaloneDotScale,
+      settings.strokeCap,
+      settings.paddingModules,
+      settings.syntheticPaddingData,
+      settings.syntheticPaddingFieldCompliance,
       maskPattern,
     );
 
-    drawRenderResult(canvas, renderResult, backgroundCanvas);
-  }, [matrices, maskPattern, phase]);
+    drawRenderResult(canvas, renderResult, backgroundImage);
+  }, [backgroundImageVersion, matrices, maskPattern, phase, settings]);
 
   return <canvas aria-label={ariaLabel} className={className} ref={canvasRef} style={style} />;
 }

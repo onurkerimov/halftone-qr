@@ -3,6 +3,7 @@ import { type PointerEvent, type RefObject } from "react";
 type PreviewPaneProps = {
   handlePreviewPointerLeave: () => void;
   handlePreviewPointerMove: (event: PointerEvent<HTMLCanvasElement>) => void;
+  embedHref: string;
   outputRef: RefObject<HTMLCanvasElement | null>;
   pngHref: string;
   svgHref: string;
@@ -11,6 +12,7 @@ type PreviewPaneProps = {
 export function PreviewPane({
   handlePreviewPointerLeave,
   handlePreviewPointerMove,
+  embedHref,
   outputRef,
   pngHref,
   svgHref,
@@ -21,6 +23,9 @@ export function PreviewPane({
         <p className="eyebrow">Preview</p>
         <p className="field-hint preview-copy">Live canvas with PNG and SVG output.</p>
         <div className="download-actions">
+          <a className="ui-button secondary" href={embedHref} target="_blank" rel="noreferrer">
+            Embed
+          </a>
           <a className="ui-button secondary" download="qr_code.svg" href={svgHref}>
             SVG
           </a>
